@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { saveAs } from "file-saver"; 
 
 const students = [
   { username: "10433999", password: "10433999", role: "Φοιτητής", name: "Makis" },
@@ -88,19 +89,77 @@ function PrivateRoute({ user, role, children }) {
   return children;
 }
 
-function Teacher({ user }) {
+function Teacher({ user, topics, setTopics }) {
   const navigate = useNavigate();
-
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/assign")}>Αρχική Ανάθεση Θέματος σε Φοιτητή</button>
+      <ThesisList user={user} topics={topics} setTopics={setTopics} />
     </div>
   );
 }
 
-function TopicManagement({ user, topics, setTopics }) {
+function ThesisList({ user, topics = [], setTopics }) {
+  const [statusFilter, setStatusFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+
+  const filtered = (topics || []).filter(t => {
+    const roleMatch = !roleFilter || t.professor === user.name;
+    const statusMatch = !statusFilter || t.status === statusFilter;
+    return roleMatch && statusMatch;
+  });
+
+  const exportToCSV = () => {
+    const headers = ["Title", "Summary", "Status", "Student", "Role"];
+    const rows = filtered.map(t => [t.title, t.summary, t.status || "-", t.assignedStudentName || "-", t.professor === user.name ? "Επιβλέπων" : "Μέλος"]);
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "thesis_list.csv");
+  };
+
+  const exportToJSON = () => {
+    const json = JSON.stringify(filtered, null, 2);
+    const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+    saveAs(blob, "thesis_list.json");
+  };
+
+  return (
+    <div className="p-4 border rounded mt-6">
+      <h3 className="text-lg font-bold mb-2">Προβολή Λίστας Διπλωματικών</h3>
+      <div className="flex space-x-4 mb-4">
+        <select className="border p-2" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">Όλες οι καταστάσεις</option>
+          <option value="υπό ανάθεση">Υπό Ανάθεση</option>
+          <option value="ενεργή">Ενεργή</option>
+          <option value="περατωμένη">Περατωμένη</option>
+          <option value="ακυρωμένη">Ακυρωμένη</option>
+        </select>
+        <select className="border p-2" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+          <option value="">Όλοι οι ρόλοι</option>
+          <option value="Επιβλέπων">Ως Επιβλέπων</option>
+          <option value="Μέλος">Ως Μέλος Τριμελούς</option>
+        </select>
+        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToCSV}>Εξαγωγή CSV</button>
+        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
+      </div>
+
+      {filtered.map(topic => (
+        <div key={topic.id} className="border p-3 mb-2">
+          <h4 className="font-bold">{topic.title}</h4>
+          <p>{topic.summary}</p>
+          <p>Κατάσταση: {topic.status || "--"}</p>
+          <p>Φοιτητής: {topic.assignedStudentName || "--"}</p>
+          <p>Ρόλος: {topic.professor === user.name ? "Επιβλέπων" : "Μέλος"}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+function TopicManagement({ user, topics = [], setTopics }) {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [file, setFile] = useState(null);
@@ -144,7 +203,7 @@ function TopicManagement({ user, topics, setTopics }) {
   );
 }
 
-function InitialAssignment({ user, topics, setTopics }) {
+function InitialAssignment({ user, topics = [], setTopics }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredStudents, setFilteredStudents] = useState([]);
 
@@ -214,8 +273,8 @@ function InitialAssignment({ user, topics, setTopics }) {
   );
 }
 
-function Student({ user, topics }) {
-  const professorTopics = topics.filter(t => t.professor);
+function Student({ user, topics = [] }) {
+  const professorTopics = (topics || []).filter(t => t.professor);
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Καλωσορίσατε Φοιτητή: {user.name}</h2>
