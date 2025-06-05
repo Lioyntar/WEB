@@ -1,0 +1,18 @@
+{
+    "sqltools.connections": [
+        {
+            "mysqlOptions": {
+                "authProtocol": "default",
+                "enableSsl": "Disabled"
+            },
+            "previewLimit": 50,
+            "server": "database-web.c3kq4isqkxwl.eu-north-1.rds.amazonaws.com",
+            "port": 3306,
+            "driver": "MySQL",
+            "password": "bPCd^sL12$1x7cm61&fV",
+            "username": "admin",
+            "database": "thesis_support_system",
+            "name": "WebTime"
+        }
+    ]
+}
