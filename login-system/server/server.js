@@ -317,5 +317,33 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
   });
 });
 
+// Επιστροφή στοιχείων επικοινωνίας φοιτητή
+app.get("/api/student-profile", authenticate, async (req, res) => {
+  if (req.user.role !== "Φοιτητής") return res.status(403).json({ error: "Forbidden" });
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT email, mobile_telephone, landline_telephone, street, number, city, postcode
+     FROM students WHERE id = ?`,
+    [req.user.id]
+  );
+  await conn.end();
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  res.json(rows[0]);
+});
+
+// Ενημέρωση στοιχείων επικοινωνίας φοιτητή
+app.patch("/api/student-profile", authenticate, async (req, res) => {
+  if (req.user.role !== "Φοιτητής") return res.status(403).json({ error: "Forbidden" });
+  const { email, mobile_telephone, landline_telephone, street, number, city, postcode } = req.body;
+  const conn = await mysql.createConnection(dbConfig);
+  await conn.execute(
+    `UPDATE students SET email = ?, mobile_telephone = ?, landline_telephone = ?, street = ?, number = ?, city = ?, postcode = ?
+     WHERE id = ?`,
+    [email, mobile_telephone, landline_telephone, street, number, city, postcode, req.user.id]
+  );
+  await conn.end();
+  res.json({ success: true });
+});
+
 // Start the server on port 5000
 app.listen(5000, () => console.log("Backend running on port 5000"));
