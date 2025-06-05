@@ -343,6 +343,21 @@ function InitialAssignment({ user, topics = [], setTopics }) {
   );
 }
 
+// Υπολογισμός χρόνου από ανάθεση (π.χ. "2 μήνες, 3 μέρες")
+function timeSince(dateString) {
+  const now = new Date();
+  const then = new Date(dateString);
+  const diff = now - then;
+  if (isNaN(diff) || diff < 0) return "--";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const months = Math.floor(days / 30);
+  const years = Math.floor(months / 12);
+  if (years > 0) return `${years} έτη, ${months % 12} μήνες`;
+  if (months > 0) return `${months} μήνες, ${days % 30} μέρες`;
+  if (days > 0) return `${days} μέρες`;
+  return "Λιγότερο από μέρα";
+}
+
 // Student dashboard
 function Student({ user, topics = [] }) {
   // Show only topics assigned to this student
@@ -350,18 +365,19 @@ function Student({ user, topics = [] }) {
     t => t.assignedTo === user.username
   );
 
-  // Νέο state για modal και λεπτομέρειες διπλωματικής
+  // State for modal and thesis details
   const [showDetails, setShowDetails] = useState(false);
   const [details, setDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  // Άνοιγμα modal και fetch λεπτομερειών
+  // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
     setShowDetails(true);
-    // Κάνουμε fetch λεπτομέρειες διπλωματικής (με βάση το topic.id)
     try {
-      const res = await fetch(`/api/thesis-details/${topic.id}`);
+      const res = await fetch(`/api/thesis-details/${topic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
       if (res.ok) {
         setDetails(await res.json());
       } else {
@@ -373,7 +389,7 @@ function Student({ user, topics = [] }) {
     setLoadingDetails(false);
   };
 
-  // Κλείσιμο modal
+  // Close modal
   const handleCloseDetails = () => {
     setShowDetails(false);
     setDetails(null);
@@ -381,18 +397,14 @@ function Student({ user, topics = [] }) {
 
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
-      <h2 className="text-xl font-bold">Καλωσορίσατε Φοιτητή: {user.name}</h2>
-      <h3 className="text-lg font-semibold mt-4">Η Διπλωματική μου</h3>
+      <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
       {assignedTopics.length === 0 && (
         <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
       )}
       {assignedTopics.map(topic => (
         <div key={topic.id} className="border p-4 mb-2">
           <h4 className="font-bold">{topic.title}</h4>
-          <p className="text-sm text-gray-600">{topic.summary}</p>
           <p className="text-sm">Εισηγητής: {topic.professor}</p>
-          {topic.fileName && <p className="text-sm text-blue-600">Αρχείο: {topic.fileName}</p>}
-          {/* Νέο κουμπί Προβολή θέματος */}
           <button
             className="bg-blue-500 text-white px-3 py-1 mt-2"
             onClick={() => handleShowDetails(topic)}
@@ -425,14 +437,35 @@ function Student({ user, topics = [] }) {
                   <p className="mb-2">{details.summary}</p>
                   {details.fileName && (
                     <div className="mb-2">
-                      <a
-                        href={`/uploads/${details.fileName}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
                         className="text-blue-600 underline"
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            const response = await fetch(`/uploads/${details.fileName}`);
+                            if (!response.ok) {
+                              alert("Το αρχείο δεν βρέθηκε στον server.");
+                              return;
+                            }
+                            const blob = await response.blob();
+                            // Επιτρέπουμε λήψη ανεξαρτήτως mime type (μερικοί browsers/servers δεν στέλνουν σωστό type)
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = details.fileName.endsWith('.pdf') ? details.fileName : "file.pdf";
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            window.URL.revokeObjectURL(url);
+                          } catch {
+                            alert("Αποτυχία λήψης αρχείου από τον server.");
+                          }
+                        }}
                       >
-                        Λήψη αρχείου περιγραφής
-                      </a>
+                        Συνημμένο αρχείο περιγραφής
+                      </button>
                     </div>
                   )}
                   <p className="mb-2">
@@ -472,21 +505,6 @@ function Student({ user, topics = [] }) {
       )}
     </div>
   );
-}
-
-// Υπολογισμός χρόνου από ανάθεση (π.χ. "2 μήνες, 3 μέρες")
-function timeSince(dateString) {
-  const now = new Date();
-  const then = new Date(dateString);
-  const diff = now - then;
-  if (isNaN(diff) || diff < 0) return "--";
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const months = Math.floor(days / 30);
-  const years = Math.floor(months / 12);
-  if (years > 0) return `${years} έτη, ${months % 12} μήνες`;
-  if (months > 0) return `${months} μήνες, ${days % 30} μέρες`;
-  if (days > 0) return `${days} μέρες`;
-  return "Λιγότερο από μέρα";
 }
 
 // Admin/secretary dashboard

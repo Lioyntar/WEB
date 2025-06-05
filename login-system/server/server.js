@@ -5,6 +5,7 @@ const cors = require("cors"); // Middleware to enable Cross-Origin Resource Shar
 const multer = require("multer"); // Middleware for handling file uploads
 const jwt = require("jsonwebtoken"); // For creating and verifying JWT tokens
 const bcrypt = require("bcryptjs"); // For hashing and comparing passwords
+const path = require("path"); // For handling file paths
 
 // Create an Express application
 const app = express();
@@ -17,6 +18,15 @@ app.use(cors());
 
 // Parse incoming JSON requests
 app.use(express.json());
+
+// Serve uploaded files as static with correct Content-Type for PDF
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.pdf')) {
+      res.setHeader('Content-Type', 'application/pdf');
+    }
+  }
+}));
 
 // Database connection configuration
 const dbConfig = {
