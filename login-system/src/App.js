@@ -349,6 +349,36 @@ function Student({ user, topics = [] }) {
   const assignedTopics = (topics || []).filter(
     t => t.assignedTo === user.username
   );
+
+  // Νέο state για modal και λεπτομέρειες διπλωματικής
+  const [showDetails, setShowDetails] = useState(false);
+  const [details, setDetails] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Άνοιγμα modal και fetch λεπτομερειών
+  const handleShowDetails = async (topic) => {
+    setLoadingDetails(true);
+    setShowDetails(true);
+    // Κάνουμε fetch λεπτομέρειες διπλωματικής (με βάση το topic.id)
+    try {
+      const res = await fetch(`/api/thesis-details/${topic.id}`);
+      if (res.ok) {
+        setDetails(await res.json());
+      } else {
+        setDetails({ error: "Αποτυχία φόρτωσης λεπτομερειών." });
+      }
+    } catch {
+      setDetails({ error: "Αποτυχία φόρτωσης λεπτομερειών." });
+    }
+    setLoadingDetails(false);
+  };
+
+  // Κλείσιμο modal
+  const handleCloseDetails = () => {
+    setShowDetails(false);
+    setDetails(null);
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Καλωσορίσατε Φοιτητή: {user.name}</h2>
@@ -362,10 +392,101 @@ function Student({ user, topics = [] }) {
           <p className="text-sm text-gray-600">{topic.summary}</p>
           <p className="text-sm">Εισηγητής: {topic.professor}</p>
           {topic.fileName && <p className="text-sm text-blue-600">Αρχείο: {topic.fileName}</p>}
+          {/* Νέο κουμπί Προβολή θέματος */}
+          <button
+            className="bg-blue-500 text-white px-3 py-1 mt-2"
+            onClick={() => handleShowDetails(topic)}
+          >
+            Προβολή θέματος
+          </button>
         </div>
       ))}
+
+      {/* Modal με λεπτομέρειες διπλωματικής */}
+      {showDetails && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+            <button
+              className="absolute top-2 right-2 text-gray-500"
+              onClick={handleCloseDetails}
+            >
+              &times;
+            </button>
+            {loadingDetails && <div>Φόρτωση...</div>}
+            {!loadingDetails && details && (
+              details.error ? (
+                <div className="text-red-500">{details.error}</div>
+              ) : (
+                <div>
+                  <h3 className="text-xl font-bold mb-2">{details.title}</h3>
+                  <p className="mb-2">{details.summary}</p>
+                  {details.fileName && (
+                    <div className="mb-2">
+                      <a
+                        href={`/uploads/${details.fileName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline"
+                      >
+                        Λήψη αρχείου περιγραφής
+                      </a>
+                    </div>
+                  )}
+                  <p className="mb-2">
+                    <strong>Κατάσταση:</strong> {details.status || "--"}
+                  </p>
+                  <p className="mb-2">
+                    <strong>Επίσημη ανάθεση:</strong>{" "}
+                    {details.official_assignment_date
+                      ? new Date(details.official_assignment_date).toLocaleString("el-GR")
+                      : "--"}
+                  </p>
+                  {details.official_assignment_date && (
+                    <p className="mb-2">
+                      <strong>Χρόνος από ανάθεση:</strong>{" "}
+                      {timeSince(details.official_assignment_date)}
+                    </p>
+                  )}
+                  <div className="mb-2">
+                    <strong>Επιτροπή:</strong>
+                    {details.committee && details.committee.length > 0 ? (
+                      <ul className="list-disc ml-6">
+                        {details.committee.map((m, i) => (
+                          <li key={i}>
+                            {m.name} {m.surname} ({m.role})
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span> Δεν έχουν οριστεί μέλη.</span>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// Υπολογισμός χρόνου από ανάθεση (π.χ. "2 μήνες, 3 μέρες")
+function timeSince(dateString) {
+  const now = new Date();
+  const then = new Date(dateString);
+  const diff = now - then;
+  if (isNaN(diff) || diff < 0) return "--";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const months = Math.floor(days / 30);
+  const years = Math.floor(months / 12);
+  if (years > 0) return `${years} έτη, ${months % 12} μήνες`;
+  if (months > 0) return `${months} μήνες, ${days % 30} μέρες`;
+  if (days > 0) return `${days} μέρες`;
+  return "Λιγότερο από μέρα";
 }
 
 // Admin/secretary dashboard

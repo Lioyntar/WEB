@@ -222,5 +222,90 @@ app.post("/api/topics/:id/unassign", authenticate, async (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint για λεπτομέρειες διπλωματικής (student view)
+app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
+  const topicId = req.params.topicId;
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Βρες το θέμα
+  const [topicRows] = await conn.execute(
+    `SELECT t.id, t.title, t.summary, t.pdf_file_path, p.name as professor_name, p.surname as professor_surname
+     FROM thesis_topics t
+     JOIN professors p ON t.professor_id = p.id
+     WHERE t.id = ?`,
+    [topicId]
+  );
+
+  if (!topicRows.length) {
+    await conn.end();
+    return res.status(404).json({ error: "Δεν βρέθηκε το θέμα." });
+  }
+
+  let thesis = null;
+  let debug = {};
+  // Αν ο χρήστης είναι φοιτητής, βρες τη διπλωματική που του ανήκει για το συγκεκριμένο θέμα
+  if (req.user.role === "Φοιτητής") {
+    // Debug: log ids
+    debug.student_id = req.user.id;
+    debug.topic_id = topicId;
+    const [thesisRows] = await conn.execute(
+      `SELECT th.id, th.status, th.official_assignment_date, th.supervisor_id
+       FROM theses th
+       WHERE th.topic_id = ? AND th.student_id = ? LIMIT 1`,
+      [topicId, req.user.id]
+    );
+    if (thesisRows.length > 0) {
+      thesis = thesisRows[0];
+    } else {
+      // Debug: log if not found
+      console.log("No thesis found for student_id", req.user.id, "and topic_id", topicId);
+    }
+  } else {
+    // Για άλλους ρόλους, φέρε απλά την πρώτη διπλωματική με αυτό το θέμα
+    const [thesisRows] = await conn.execute(
+      `SELECT th.id, th.status, th.official_assignment_date, th.supervisor_id
+       FROM theses th
+       WHERE th.topic_id = ? LIMIT 1`,
+      [topicId]
+    );
+    if (thesisRows.length > 0) thesis = thesisRows[0];
+  }
+
+  // Βρες τα μέλη της επιτροπής (committee_members)
+  let committee = [];
+  if (thesis && thesis.id) {
+    const [committeeRows] = await conn.execute(
+      `SELECT cm.professor_id, cm.response, cm.response_date, p.name, p.surname,
+        CASE
+          WHEN cm.professor_id = ? THEN 'Επιβλέπων'
+          ELSE 'Μέλος'
+        END as role
+       FROM committee_members cm
+       JOIN professors p ON cm.professor_id = p.id
+       WHERE cm.thesis_id = ?`,
+      [thesis.supervisor_id, thesis.id]
+    );
+    committee = committeeRows.map(r => ({
+      professor_id: r.professor_id,
+      name: r.name,
+      surname: r.surname,
+      role: r.role
+    }));
+  }
+
+  await conn.end();
+
+  res.json({
+    id: topicRows[0].id,
+    title: topicRows[0].title,
+    summary: topicRows[0].summary,
+    fileName: topicRows[0].pdf_file_path,
+    status: thesis ? thesis.status : null,
+    official_assignment_date: thesis ? thesis.official_assignment_date : null,
+    committee,
+    debug // μπορείς να το δεις στο network tab του browser
+  });
+});
+
 // Start the server on port 5000
 app.listen(5000, () => console.log("Backend running on port 5000"));
