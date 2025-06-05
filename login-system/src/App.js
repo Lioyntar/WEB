@@ -370,6 +370,12 @@ function Student({ user, topics = [] }) {
   const [details, setDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
+  // State for profile modal
+  const [showProfile, setShowProfile] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
@@ -389,15 +395,76 @@ function Student({ user, topics = [] }) {
     setLoadingDetails(false);
   };
 
-  // Close modal
+  // Close thesis modal
   const handleCloseDetails = () => {
     setShowDetails(false);
     setDetails(null);
   };
 
+  // Προβολή/Επεξεργασία προφίλ
+  const handleShowProfile = async () => {
+    setProfileLoading(true);
+    setShowProfile(true);
+    try {
+      const res = await fetch("/api/student-profile", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Αν το data είναι undefined ή κενό αντικείμενο, εμφάνισε μήνυμα
+        if (!data || Object.keys(data).length === 0) {
+          setProfile({ error: "Δεν βρέθηκαν στοιχεία προφίλ." });
+        } else {
+          setProfile(data);
+        }
+      } else {
+        setProfile({ error: "Αποτυχία φόρτωσης προφίλ." });
+      }
+    } catch {
+      setProfile({ error: "Αποτυχία φόρτωσης προφίλ." });
+    }
+    setProfileLoading(false);
+  };
+
+  // Υποβολή φόρμας προφίλ
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    try {
+      const res = await fetch("/api/student-profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify(profile)
+      });
+      if (res.ok) {
+        setShowProfile(false);
+      } else {
+        alert("Αποτυχία αποθήκευσης προφίλ.");
+      }
+    } catch {
+      alert("Αποτυχία αποθήκευσης προφίλ.");
+    }
+    setProfileSaving(false);
+  };
+
+  // Ενημέρωση πεδίων προφίλ
+  const handleProfileChange = (e) => {
+    setProfile({ ...profile, [e.target.name]: e.target.value });
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
+      {/* Κουμπί επεξεργασίας προφίλ */}
+      <button
+        className="bg-green-600 text-white px-3 py-1 mb-4"
+        onClick={handleShowProfile}
+      >
+        Επεξεργασία Προφίλ
+      </button>
       {assignedTopics.length === 0 && (
         <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
       )}
@@ -498,6 +565,82 @@ function Student({ user, topics = [] }) {
                     )}
                   </div>
                 </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal επεξεργασίας προφίλ */}
+      {showProfile && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+            <button
+              className="absolute top-2 right-2 text-gray-500"
+              onClick={() => setShowProfile(false)}
+            >
+              &times;
+            </button>
+            {profileLoading && <div>Φόρτωση...</div>}
+            {!profileLoading && profile && (
+              profile.error ? (
+                <div className="text-red-500">{profile.error}</div>
+              ) : (
+                <form onSubmit={handleSaveProfile} className="space-y-3">
+                  <h3 className="text-xl font-bold mb-2">Επεξεργασία Προφίλ</h3>
+                  <input
+                    className="border p-2 w-full"
+                    name="email"
+                    placeholder="Email"
+                    value={profile.email || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <input
+                    className="border p-2 w-full"
+                    name="mobile_telephone"
+                    placeholder="Κινητό Τηλέφωνο"
+                    value={profile.mobile_telephone || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <input
+                    className="border p-2 w-full"
+                    name="landline_telephone"
+                    placeholder="Σταθερό Τηλέφωνο"
+                    value={profile.landline_telephone || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <input
+                    className="border p-2 w-full"
+                    name="number"
+                    placeholder="Αριθμός"
+                    value={profile.number || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <input
+                    className="border p-2 w-full"
+                    name="city"
+                    placeholder="Πόλη"
+                    value={profile.city || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <input
+                    className="border p-2 w-full"
+                    name="postcode"
+                    placeholder="Τ.Κ."
+                    value={profile.postcode || ""}
+                    onChange={handleProfileChange}
+                  />
+                  <button
+                    className="bg-green-600 text-white px-4 py-2"
+                    type="submit"
+                    disabled={profileSaving}
+                  >
+                    Αποθήκευση
+                  </button>
+                </form>
               )
             )}
           </div>
