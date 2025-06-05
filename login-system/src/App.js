@@ -345,13 +345,18 @@ function InitialAssignment({ user, topics = [], setTopics }) {
 
 // Student dashboard
 function Student({ user, topics = [] }) {
-  // Show all topics with a professor
-  const professorTopics = (topics || []).filter(t => t.professor);
+  // Show only topics assigned to this student
+  const assignedTopics = (topics || []).filter(
+    t => t.assignedTo === user.username
+  );
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Καλωσορίσατε Φοιτητή: {user.name}</h2>
-      <h3 className="text-lg font-semibold mt-4">Διαθέσιμα Θέματα</h3>
-      {professorTopics.map(topic => (
+      <h3 className="text-lg font-semibold mt-4">Η Διπλωματική μου</h3>
+      {assignedTopics.length === 0 && (
+        <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
+      )}
+      {assignedTopics.map(topic => (
         <div key={topic.id} className="border p-4 mb-2">
           <h4 className="font-bold">{topic.title}</h4>
           <p className="text-sm text-gray-600">{topic.summary}</p>

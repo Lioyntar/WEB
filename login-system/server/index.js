@@ -129,19 +129,25 @@ app.post("/api/login", async (req, res) => {
 // Get all thesis topics (professor view)
 app.get("/api/topics", authenticate, async (req, res) => {
   const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Select topics and join with professor name
+  // Select topics, join with professor name, and left join with theses and students for assignment info
   const [rows] = await conn.execute(
-    `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path
+    `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path,
+            th.student_id, s.student_number, s.name as student_name, th.status
      FROM thesis_topics t
-     JOIN professors p ON t.professor_id = p.id`
+     JOIN professors p ON t.professor_id = p.id
+     LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση')
+     LEFT JOIN students s ON th.student_id = s.id`
   );
-  // Return topics as JSON
+  // Return topics as JSON with assignment info
   res.json(rows.map(r => ({
     id: r.id,
     title: r.title,
     summary: r.summary,
     professor: r.professor,
-    fileName: r.pdf_file_path
+    fileName: r.pdf_file_path,
+    assignedTo: r.student_number || null,
+    assignedStudentName: r.student_name || null,
+    status: r.status || null
   })));
 });
 
