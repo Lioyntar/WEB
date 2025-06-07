@@ -557,7 +557,7 @@ function Student({ user, topics = [] }) {
                     <div className="mb-2">
                       <button
                         className="text-blue-600 underline"
-                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "white" }}
                         onClick={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
