@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"; // React hooks for state and lifecycle
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom"; // Routing components
 import { saveAs } from "file-saver"; // For file downloads (CSV/JSON)
-import './Login.css';
+import './App.css';
 
 // Main App component
 function App() {
@@ -79,7 +79,7 @@ function Login({ setUser }) {
               value={username}
               onChange={e => setUsername(e.target.value)}
             />
-            <label>Username</label>
+            <label>Email ή AM</label>
           </div>
           <div className="input-box">
             <input
@@ -88,7 +88,7 @@ function Login({ setUser }) {
               value={password}
               onChange={e => setPassword(e.target.value)}
             />
-            <label>Password</label>
+            <label>Κωδικός</label>
           </div>
           <button type="submit" className="btn">Login</button>
         </form>
@@ -167,24 +167,28 @@ function ThesisList({ user, topics = [], setTopics }) {
       <h3 className="text-lg font-bold mb-2">Προβολή Λίστας Διπλωματικών</h3>
       {/* Filters and export buttons */}
       <div className="flex space-x-4 mb-4">
-        <select className="border p-2" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">Όλες οι καταστάσεις</option>
-          <option value="υπό ανάθεση">Υπό Ανάθεση</option>
-          <option value="ενεργή">Ενεργή</option>
-          <option value="περατωμένη">Περατωμένη</option>
-          <option value="ακυρωμένη">Ακυρωμένη</option>
-        </select>
-        <select className="border p-2" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
-          <option value="">Όλοι οι ρόλοι</option>
-          <option value="Επιβλέπων">Ως Επιβλέπων</option>
-          <option value="Μέλος">Ως Μέλος Τριμελούς</option>
-        </select>
-        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToCSV}>Εξαγωγή CSV</button>
-        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
+        <div className="input-box">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">Όλες οι καταστάσεις</option>
+            <option value="υπό ανάθεση">Υπό Ανάθεση</option>
+            <option value="ενεργή">Ενεργή</option>
+            <option value="περατωμένη">Περατωμένη</option>
+            <option value="ακυρωμένη">Ακυρωμένη</option>
+          </select>
+        </div>
+        <div className="input-box">
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+            <option value="">Όλοι οι ρόλοι</option>
+            <option value="Επιβλέπων">Ως Επιβλέπων</option>
+            <option value="Μέλος">Ως Μέλος Τριμελούς</option>
+          </select>
+        </div>
+        <button className="bg-[#0ef] text-[#1f293a] px-3 py-1" onClick={exportToCSV}>Εξαγωγή CSV</button>
+        <button className="bg-[#0ef] text-[#1f293a] px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
       </div>
       {/* Render filtered topics */}
-      {filtered.map(topic => (
-        <div key={topic.id} className="border p-3 mb-2">
+      {filtered.map((topic, idx) => (
+        <div key={topic.id} className="border p-3 mb-2 thesis-list-item">
           <h4 className="font-bold">{topic.title}</h4>
           <p>{topic.summary}</p>
           <p>Κατάσταση: {topic.status || "--"}</p>
@@ -244,18 +248,46 @@ function TopicManagement({ user, topics = [], setTopics }) {
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Δημιουργία Νέου Θέματος</h2>
       {/* New topic form */}
-      <input className="border p-2 w-full" placeholder="Τίτλος" value={title} onChange={e => setTitle(e.target.value)} />
-      <textarea className="border p-2 w-full" placeholder="Σύνοψη" value={summary} onChange={e => setSummary(e.target.value)} />
+      <div className="input-box">
+        <input
+          type="text"
+          required
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+        />
+        <label>Όνομα θέματος</label>
+      </div>
+      <div className="input-box">
+        <textarea
+          required
+          value={summary}
+          onChange={e => setSummary(e.target.value)}
+        />
+        <label>Σύνοψη</label>
+      </div>
       <input type="file" accept="application/pdf" onChange={e => setFile(e.target.files[0])} />
-      <button className="bg-green-500 text-white px-4 py-2" onClick={handleAddTopic}>Προσθήκη</button>
+      <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 add-button" onClick={handleAddTopic}>Προσθήκη</button>
 
       <h2 className="text-xl font-bold mt-6">Τα Θέματά Μου</h2>
       {/* List of topics owned by professor */}
       {topics.filter(t => t.professor === user.name).map(topic => (
         <div key={topic.id} className="border p-4 mb-2">
-          <input className="border p-2 w-full mb-2" value={topic.title} onChange={e => handleEdit(topic.id, "title", e.target.value)} />
-          <textarea className="border p-2 w-full mb-2" value={topic.summary} onChange={e => handleEdit(topic.id, "summary", e.target.value)} />
-          {topic.fileName && <p className="text-sm text-gray-600">Αρχείο: {topic.fileName}</p>}
+          <div className="input-box">
+            <input
+              type="text"
+              value={topic.title}
+              onChange={e => handleEdit(topic.id, "title", e.target.value)}
+            />
+            <label>Όνομα θέματος</label>
+          </div>
+          <div className="input-box">
+            <textarea
+              value={topic.summary}
+              onChange={e => handleEdit(topic.id, "summary", e.target.value)}
+            />
+            <label>Σύνοψη</label>
+          </div>
+          {topic.fileName && <p className="text-sm text-white">Αρχείο: {topic.fileName}</p>}
         </div>
       ))}
     </div>
@@ -317,8 +349,16 @@ function InitialAssignment({ user, topics = [], setTopics }) {
       <h2 className="text-xl font-bold">Αρχική Ανάθεση Θέματος σε Φοιτητή</h2>
       {/* Search form */}
       <div className="flex space-x-2">
-        <input className="border p-2 flex-1" placeholder="Αναζήτηση με ΑΜ ή Όνομα" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-        <button className="bg-blue-500 text-white px-4 py-2" onClick={handleSearch}>Αναζήτηση</button>
+        <div className="input-box flex-1">
+          <input
+            type="text"
+            required
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+          <label>Πληκτρολογίστε ΑΜ</label>
+        </div>
+        <button className="bg-[#0ef] text-[#1f293a] px-4 py-2" onClick={handleSearch}>Αναζήτηση</button>
       </div>
       {/* Search results */}
       {filteredStudents.length > 0 && (
@@ -326,7 +366,7 @@ function InitialAssignment({ user, topics = [], setTopics }) {
           <h3 className="font-semibold mt-4">Αποτελέσματα:</h3>
           {filteredStudents.map(student => (
             <div key={student.username} className="border p-4 my-2 rounded">
-              <p>Όνομα: {student.name} | ΑΜ: {student.username}</p>
+              <p>Όνομα: {student.name} | ΑΜ: {student.student_number}</p>
               <div className="mt-2 space-y-2">
                 {availableTopics.map(topic => (
                   <div key={topic.id} className="border p-2">
@@ -471,7 +511,7 @@ function Student({ user, topics = [] }) {
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
       {/* Κουμπί επεξεργασίας προφίλ */}
       <button
-        className="bg-green-600 text-white px-3 py-1 mb-4"
+        className="bg-[#0ef] text-white px-3 py-1 mb-4"
         onClick={handleShowProfile}
       >
         Επεξεργασία Προφίλ
@@ -484,7 +524,7 @@ function Student({ user, topics = [] }) {
           <h4 className="font-bold">{topic.title}</h4>
           <p className="text-sm">Εισηγητής: {topic.professor}</p>
           <button
-            className="bg-blue-500 text-white px-3 py-1 mt-2"
+            className="bg-[#0ef] text-white px-3 py-1 mt-2"
             onClick={() => handleShowDetails(topic)}
           >
             Προβολή θέματος
@@ -498,7 +538,7 @@ function Student({ user, topics = [] }) {
           className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
           style={{ zIndex: 1000 }}
         >
-          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button
               className="absolute top-2 right-2 text-gray-500"
               onClick={handleCloseDetails}
@@ -561,18 +601,18 @@ function Student({ user, topics = [] }) {
                       {timeSince(details.official_assignment_date)}
                     </p>
                   )}
-                  <div className="mb-2">
+                  <div className="mb-2 fade-in-committee">
                     <strong>Επιτροπή:</strong>
                     {details.committee && details.committee.length > 0 ? (
-                      <ul className="list-disc ml-6">
+                      <ul className="list-disc ml-6 fade-in-committee">
                         {details.committee.map((m, i) => (
-                          <li key={i}>
+                          <li key={i} className="fade-in-committee">
                             {m.name} {m.surname} ({m.role})
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <span> Δεν έχουν οριστεί μέλη.</span>
+                      <span className="fade-in-committee"> Δεν έχουν οριστεί μέλη.</span>
                     )}
                   </div>
                 </div>
@@ -588,7 +628,7 @@ function Student({ user, topics = [] }) {
           className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
           style={{ zIndex: 1000 }}
         >
-          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+          <div className="modal-content">
             <button
               className="absolute top-2 right-2 text-gray-500"
               onClick={() => setShowProfile(false)}
@@ -600,52 +640,70 @@ function Student({ user, topics = [] }) {
               profile.error ? (
                 <div className="text-red-500">{profile.error}</div>
               ) : (
-                <form onSubmit={handleSaveProfile} className="space-y-3">
+                <form onSubmit={handleSaveProfile} className="space-y-3 profile-form">
                   <h3 className="text-xl font-bold mb-2">Επεξεργασία Προφίλ</h3>
-                  <input
-                    className="border p-2 w-full"
-                    name="email"
-                    placeholder="Email"
-                    value={profile.email || ""}
-                    onChange={handleProfileChange}
-                  />
-                  <input
-                    className="border p-2 w-full"
-                    name="mobile_telephone"
-                    placeholder="Κινητό Τηλέφωνο"
-                    value={profile.mobile_telephone || ""}
-                    onChange={handleProfileChange}
-                  />
-                  <input
-                    className="border p-2 w-full"
-                    name="landline_telephone"
-                    placeholder="Σταθερό Τηλέφωνο"
-                    value={profile.landline_telephone || ""}
-                    onChange={handleProfileChange}
-                  />
-                  <input
-                    className="border p-2 w-full"
-                    name="number"
-                    placeholder="Αριθμός"
-                    value={profile.number || ""}
-                    onChange={handleProfileChange}
-                  />
-                  <input
-                    className="border p-2 w-full"
-                    name="city"
-                    placeholder="Πόλη"
-                    value={profile.city || ""}
-                    onChange={handleProfileChange}
-                  />
-                  <input
-                    className="border p-2 w-full"
-                    name="postcode"
-                    placeholder="Τ.Κ."
-                    value={profile.postcode || ""}
-                    onChange={handleProfileChange}
-                  />
+                  <div className="input-box">
+                    <input
+                      type="email"
+                      required
+                      value={profile.email || ""}
+                      onChange={handleProfileChange}
+                      name="email"
+                    />
+                    <label>Email</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="tel"
+                      required
+                      value={profile.mobile_telephone || ""}
+                      onChange={handleProfileChange}
+                      name="mobile_telephone"
+                    />
+                    <label>Κινητό Τηλέφωνο</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="tel"
+                      required
+                      value={profile.landline_telephone || ""}
+                      onChange={handleProfileChange}
+                      name="landline_telephone"
+                    />
+                    <label>Σταθερό Τηλέφωνο</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.number || ""}
+                      onChange={handleProfileChange}
+                      name="number"
+                    />
+                    <label>Αριθμός</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.city || ""}
+                      onChange={handleProfileChange}
+                      name="city"
+                    />
+                    <label>Πόλη</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.postcode || ""}
+                      onChange={handleProfileChange}
+                      name="postcode"
+                    />
+                    <label>Τ.Κ.</label>
+                  </div>
                   <button
-                    className="bg-green-600 text-white px-4 py-2"
+                    className="bg-[#0ef] text-[#1f293a] px-4 py-2"
                     type="submit"
                     disabled={profileSaving}
                   >
