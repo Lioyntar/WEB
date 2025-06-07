@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"; // React hooks for state and lifecycle
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom"; // Routing components
 import { saveAs } from "file-saver"; // For file downloads (CSV/JSON)
+import './Login.css';
 
 // Main App component
 function App() {
@@ -46,7 +47,8 @@ function Login({ setUser }) {
   const navigate = useNavigate(); // Router navigation
 
   // Handles login button click
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
     // Send login request to backend
     const res = await fetch("/api/login", {
       method: "POST",
@@ -66,25 +68,34 @@ function Login({ setUser }) {
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <h2 className="text-xl font-bold mb-4">Σύνδεση</h2>
-      {/* Username input */}
-      <input
-        className="border p-2 w-full mb-2"
-        placeholder="ΑΜ (Φοιτητή) ή Email (Διδάσκοντα)"
-        value={username}
-        onChange={e => setUsername(e.target.value)}
-      />
-      {/* Password input */}
-      <input
-        className="border p-2 w-full mb-2"
-        placeholder="Κωδικός"
-        type="password"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-      />
-      {/* Login button */}
-      <button className="bg-blue-500 text-white px-4 py-2" onClick={handleLogin}>Σύνδεση</button>
+    <div className="container">
+      <div className="login-box">
+        <h2>Login</h2>
+        <form onSubmit={handleLogin}>
+          <div className="input-box">
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+            />
+            <label>Username</label>
+          </div>
+          <div className="input-box">
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+            <label>Password</label>
+          </div>
+          <button type="submit" className="btn">Login</button>
+        </form>
+      </div>
+      {[...Array(50)].map((_, i) => (
+        <span key={i} style={{ "--i": i }}></span>
+      ))}
     </div>
   );
 }
