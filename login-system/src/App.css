@@ -13,12 +13,31 @@ body {
     align-items: center;
     min-height: 100vh;
     background: #1f293a;
+    background-image: url('https://media.istockphoto.com/id/480762174/photo/books-in-the-bookshelf.jpg?b=1&s=612x612&w=0&k=20&c=hAnUuJhD1l9gsS7qLlMFEKdEfP_R1KDtMhT4cAK4IhY=');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    position: relative;
+}
+
+body::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(31, 41, 58, 0.85); /* This creates a dark overlay to ensure content remains readable */
+    z-index: 0;
 }
 
 .App {
     text-align: center;
     width: 100%;
     min-height: 100vh;
+    position: relative;
+    z-index: 1; /* This ensures all content stays above the background overlay */
 }
 
 .container {
@@ -444,3 +463,66 @@ h2, h3, h4, p, .input-box, button {
 .thesis-list-item:nth-of-type(3) { animation-delay: 0.35s; }
 .thesis-list-item:nth-of-type(4) { animation-delay: 0.45s; }
 .thesis-list-item:nth-of-type(5) { animation-delay: 0.55s; }
+/* 1) Custom properties for the animation */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 90deg;
+  inherits: true;
+}
+
+/* 2) Animation defaults & colors */
+:root {
+  --d: 2500ms;                   /* duration */
+  --angle: 90deg;                /* start angle */
+  --c1: #0ef;                    /* bright segment */
+  --c2: rgba(14, 239, 255, 0.1); /* faint background segment */
+}
+
+/* 3) Rotate the conic border from 90→420deg */
+@keyframes borderRotate {
+  to {
+    --angle: 420deg;
+  }
+}
+
+/* 4) Apply to your inputs & textareas */
+.input-box input,
+.input-box textarea {
+  /* keep your existing look */
+  background: transparent;
+  outline: none;
+  font-size: 1em;
+  color: #fff;
+  padding: 0 20px;
+  height: 50px;
+
+  /* pill shape */
+  border-radius: 50px;
+
+  /* fat transparent border to host the gradient */
+  border: 4px solid transparent;
+
+  /* gradient ring around that border */
+  border-image-source: conic-gradient(
+    from var(--angle),
+    var(--c2) 0deg,
+    var(--c1) 36deg,
+    var(--c1) 54deg,
+    var(--c2) 90deg
+  );
+  border-image-slice: 1;    /* fill the entire border */
+  border-image-width: 1;    /* use the 4px you set */
+  border-image-outset: 0;
+  border-image-repeat: stretch;
+
+  /* animate the rotation */
+  animation: borderRotate var(--d) linear infinite;
+}
+
+/* 5) Focus/valid states continue to work */
+.input-box input:focus,
+.input-box input:valid,
+.input-box textarea:focus,
+.input-box textarea:valid {
+  /* gradient border handles the highlight now */
+}
