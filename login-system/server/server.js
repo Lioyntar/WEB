@@ -381,14 +381,31 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
   const conn = await mysql.createConnection(dbConfig);
 
   try {
-    // Έλεγξε αν υπάρχει η διπλωματική
-    const [thesisRows] = await conn.execute(
-      "SELECT id FROM theses WHERE id = ?",
-      [thesisId]
-    );
-    if (!thesisRows.length) {
-      await conn.end();
-      return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
+    let thesisRow;
+    if (req.user.role === "Φοιτητής") {
+      // Βρες αν ο φοιτητής έχει διπλωματική με το συγκεκριμένο θέμα (topic_id)
+      // Πρώτα βρες το topic_id από το thesis_topics (για το κουμπί "Διαχείριση διπλωματικής" στέλνεις topic id, όχι thesis id)
+      // Άρα, βρες τη διπλωματική που έχει student_id = req.user.id ΚΑΙ topic_id = thesisId
+      const [rows] = await conn.execute(
+        "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+        [thesisId, req.user.id]
+      );
+      if (rows.length === 0) {
+        await conn.end();
+        return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+      }
+      thesisRow = rows[0];
+    } else {
+      // Για άλλους ρόλους (π.χ. admin), απλά έλεγξε αν υπάρχει η διπλωματική με id = thesisId
+      const [rows] = await conn.execute(
+        "SELECT id FROM theses WHERE id = ?",
+        [thesisId]
+      );
+      if (rows.length === 0) {
+        await conn.end();
+        return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
+      }
+      thesisRow = rows[0];
     }
 
     // Έλεγξε αν υπάρχει ο καθηγητής
@@ -404,7 +421,7 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
     // Έλεγχος αν υπάρχουν ήδη 2 αποδεκτές προσκλήσεις
     const [accepted] = await conn.execute(
       "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'accepted'",
-      [thesisId]
+      [thesisRow.id]
     );
     if (accepted[0].cnt >= 2) {
       await conn.end();
@@ -414,18 +431,18 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
     // Μην επιτρέπεις διπλή πρόσκληση στον ίδιο
     const [exists] = await conn.execute(
       "SELECT id FROM invitations WHERE thesis_id = ? AND invited_professor_id = ?",
-      [thesisId, professorId]
+      [thesisRow.id, professorId]
     );
     if (exists.length > 0) {
       await conn.end();
       return res.status(400).json({ error: "Έχει ήδη σταλεί πρόσκληση σε αυτόν τον διδάσκοντα." });
     }
 
-    // Εισαγωγή πρόσκλησης (χρησιμοποιώντας τα σωστά ονόματα στη βάση σου)
+    // Εισαγωγή πρόσκλησης
     await conn.execute(
       `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_professor_id, status, invitation_date)
        VALUES (?, ?, NULL, 'pending', NOW())`,
-      [thesisId, professorId]
+      [thesisRow.id, professorId]
     );
     await conn.end();
     res.json({ success: true });
