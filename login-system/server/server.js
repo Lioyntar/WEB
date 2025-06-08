@@ -458,44 +458,32 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
   const invitationId = req.params.invitationId;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Ενημέρωσε την πρόσκληση ως accepted (αν δεν έχει ήδη απορριφθεί/ακυρωθεί)
+  // Βρες την πρόσκληση και το thesis_id
   const [invRows] = await conn.execute(
-    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ? AND status = 'pending'",
+    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ?",
     [invitationId, req.user.id]
   );
   if (!invRows.length) {
     await conn.end();
-    return res.status(404).json({ error: "Invitation not found or already handled" });
+    return res.status(404).json({ error: "Invitation not found" });
   }
   const thesisId = invRows[0].thesis_id;
 
+  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής (committee_members)
   await conn.execute(
-    "UPDATE invitations SET status = 'accepted', response_date = NOW() WHERE id = ?",
+    `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
+     VALUES (?, ?, 'accepted', NOW())`,
+    [thesisId, req.user.id]
+  );
+
+  // Διέγραψε την πρόσκληση
+  await conn.execute(
+    "DELETE FROM invitations WHERE id = ?",
     [invitationId]
   );
 
-  // Πόσοι έχουν αποδεχθεί;
-  const [acceptedRows] = await conn.execute(
-    "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'accepted'",
-    [thesisId]
-  );
-  const acceptedCount = acceptedRows[0].cnt;
-
-  if (acceptedCount >= 2) {
-    // Ενημέρωσε τη διπλωματική ως ενεργή
-    await conn.execute(
-      "UPDATE theses SET status = 'ενεργή' WHERE id = ?",
-      [thesisId]
-    );
-    // Ακύρωσε όλες τις υπόλοιπες εκκρεμείς προσκλήσεις
-    await conn.execute(
-      "UPDATE invitations SET status = 'cancelled' WHERE thesis_id = ? AND status = 'pending'",
-      [thesisId]
-    );
-  }
-
   await conn.end();
-  res.json({ success: true, thesisActivated: acceptedCount >= 2 });
+  res.json({ success: true });
 });
 
 // Διδάσκων απορρίπτει πρόσκληση για τριμελή
@@ -504,18 +492,27 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   const invitationId = req.params.invitationId;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Ενημέρωσε την πρόσκληση ως rejected (αν δεν έχει ήδη αποδεχθεί/ακυρωθεί)
+  // Βρες την πρόσκληση και το thesis_id
   const [invRows] = await conn.execute(
-    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ? AND status = 'pending'",
+    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ?",
     [invitationId, req.user.id]
   );
   if (!invRows.length) {
     await conn.end();
-    return res.status(404).json({ error: "Invitation not found or already handled" });
+    return res.status(404).json({ error: "Invitation not found" });
   }
+  const thesisId = invRows[0].thesis_id;
 
+  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'rejected'
   await conn.execute(
-    "UPDATE invitations SET status = 'rejected', response_date = NOW() WHERE id = ?",
+    `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
+     VALUES (?, ?, 'rejected', NOW())`,
+    [thesisId, req.user.id]
+  );
+
+  // Διέγραψε την πρόσκληση
+  await conn.execute(
+    "DELETE FROM invitations WHERE id = ?",
     [invitationId]
   );
 
