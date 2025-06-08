@@ -158,9 +158,7 @@ function Teacher({ user, topics, setTopics }) {
         headers: { Authorization: `Bearer ${user.token}` }
       });
       if (res.ok) {
-        setInvitations(invitations.map(inv =>
-          inv.id === invitationId ? { ...inv, status: "accepted" } : inv
-        ));
+        setInvitations(invitations.filter(inv => inv.id !== invitationId));
       } else {
         const err = await res.json().catch(() => ({}));
         setInviteError(err.error || "Αποτυχία αποδοχής πρόσκλησης.");
@@ -179,9 +177,7 @@ function Teacher({ user, topics, setTopics }) {
         headers: { Authorization: `Bearer ${user.token}` }
       });
       if (res.ok) {
-        setInvitations(invitations.map(inv =>
-          inv.id === invitationId ? { ...inv, status: "rejected" } : inv
-        ));
+        setInvitations(invitations.filter(inv => inv.id !== invitationId));
       } else {
         const err = await res.json().catch(() => ({}));
         setInviteError(err.error || "Αποτυχία απόρριψης πρόσκλησης.");
@@ -223,7 +219,7 @@ function Teacher({ user, topics, setTopics }) {
                       <strong>Θέμα:</strong> {inv.topic_title}
                     </div>
                     <div>
-                      <strong>Κατάσταση:</strong> {inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : "Απορριφθείσα"}
+                      <strong>Κατάσταση:</strong> {inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}
                     </div>
                     {inv.status === "pending" && (
                       <div className="mt-2 space-x-2">
