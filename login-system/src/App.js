@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"; // React hooks for state and lifecycle
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom"; // Routing components
 import { saveAs } from "file-saver"; // For file downloads (CSV/JSON)
+import './App.css';
 
 // Main App component
 function App() {
@@ -46,7 +47,8 @@ function Login({ setUser }) {
   const navigate = useNavigate(); // Router navigation
 
   // Handles login button click
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
     // Send login request to backend
     const res = await fetch("/api/login", {
       method: "POST",
@@ -66,25 +68,34 @@ function Login({ setUser }) {
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <h2 className="text-xl font-bold mb-4">Σύνδεση</h2>
-      {/* Username input */}
-      <input
-        className="border p-2 w-full mb-2"
-        placeholder="ΑΜ (Φοιτητή) ή Email (Διδάσκοντα)"
-        value={username}
-        onChange={e => setUsername(e.target.value)}
-      />
-      {/* Password input */}
-      <input
-        className="border p-2 w-full mb-2"
-        placeholder="Κωδικός"
-        type="password"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-      />
-      {/* Login button */}
-      <button className="bg-blue-500 text-white px-4 py-2" onClick={handleLogin}>Σύνδεση</button>
+    <div className="container">
+      <div className="login-box">
+        <h2>Login</h2>
+        <form onSubmit={handleLogin}>
+          <div className="input-box">
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+            />
+            <label>Email ή AM</label>
+          </div>
+          <div className="input-box">
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+            <label>Κωδικός</label>
+          </div>
+          <button type="submit" className="btn">Login</button>
+        </form>
+      </div>
+      {[...Array(50)].map((_, i) => (
+        <span key={i} style={{ "--i": i }}></span>
+      ))}
     </div>
   );
 }
@@ -156,24 +167,28 @@ function ThesisList({ user, topics = [], setTopics }) {
       <h3 className="text-lg font-bold mb-2">Προβολή Λίστας Διπλωματικών</h3>
       {/* Filters and export buttons */}
       <div className="flex space-x-4 mb-4">
-        <select className="border p-2" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">Όλες οι καταστάσεις</option>
-          <option value="υπό ανάθεση">Υπό Ανάθεση</option>
-          <option value="ενεργή">Ενεργή</option>
-          <option value="περατωμένη">Περατωμένη</option>
-          <option value="ακυρωμένη">Ακυρωμένη</option>
-        </select>
-        <select className="border p-2" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
-          <option value="">Όλοι οι ρόλοι</option>
-          <option value="Επιβλέπων">Ως Επιβλέπων</option>
-          <option value="Μέλος">Ως Μέλος Τριμελούς</option>
-        </select>
-        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToCSV}>Εξαγωγή CSV</button>
-        <button className="bg-green-500 text-white px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
+        <div className="input-box">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">Όλες οι καταστάσεις</option>
+            <option value="υπό ανάθεση">Υπό Ανάθεση</option>
+            <option value="ενεργή">Ενεργή</option>
+            <option value="περατωμένη">Περατωμένη</option>
+            <option value="ακυρωμένη">Ακυρωμένη</option>
+          </select>
+        </div>
+        <div className="input-box">
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+            <option value="">Όλοι οι ρόλοι</option>
+            <option value="Επιβλέπων">Ως Επιβλέπων</option>
+            <option value="Μέλος">Ως Μέλος Τριμελούς</option>
+          </select>
+        </div>
+        <button className="bg-[#0ef] text-[#1f293a] px-3 py-1" onClick={exportToCSV}>Εξαγωγή CSV</button>
+        <button className="bg-[#0ef] text-[#1f293a] px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
       </div>
       {/* Render filtered topics */}
-      {filtered.map(topic => (
-        <div key={topic.id} className="border p-3 mb-2">
+      {filtered.map((topic, idx) => (
+        <div key={topic.id} className="border p-3 mb-2 thesis-list-item">
           <h4 className="font-bold">{topic.title}</h4>
           <p>{topic.summary}</p>
           <p>Κατάσταση: {topic.status || "--"}</p>
@@ -233,18 +248,46 @@ function TopicManagement({ user, topics = [], setTopics }) {
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Δημιουργία Νέου Θέματος</h2>
       {/* New topic form */}
-      <input className="border p-2 w-full" placeholder="Τίτλος" value={title} onChange={e => setTitle(e.target.value)} />
-      <textarea className="border p-2 w-full" placeholder="Σύνοψη" value={summary} onChange={e => setSummary(e.target.value)} />
+      <div className="input-box">
+        <input
+          type="text"
+          required
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+        />
+        <label>Όνομα θέματος</label>
+      </div>
+      <div className="input-box">
+        <textarea
+          required
+          value={summary}
+          onChange={e => setSummary(e.target.value)}
+        />
+        <label>Σύνοψη</label>
+      </div>
       <input type="file" accept="application/pdf" onChange={e => setFile(e.target.files[0])} />
-      <button className="bg-green-500 text-white px-4 py-2" onClick={handleAddTopic}>Προσθήκη</button>
+      <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 add-button" onClick={handleAddTopic}>Προσθήκη</button>
 
       <h2 className="text-xl font-bold mt-6">Τα Θέματά Μου</h2>
       {/* List of topics owned by professor */}
       {topics.filter(t => t.professor === user.name).map(topic => (
         <div key={topic.id} className="border p-4 mb-2">
-          <input className="border p-2 w-full mb-2" value={topic.title} onChange={e => handleEdit(topic.id, "title", e.target.value)} />
-          <textarea className="border p-2 w-full mb-2" value={topic.summary} onChange={e => handleEdit(topic.id, "summary", e.target.value)} />
-          {topic.fileName && <p className="text-sm text-gray-600">Αρχείο: {topic.fileName}</p>}
+          <div className="input-box">
+            <input
+              type="text"
+              value={topic.title}
+              onChange={e => handleEdit(topic.id, "title", e.target.value)}
+            />
+            <label>Όνομα θέματος</label>
+          </div>
+          <div className="input-box">
+            <textarea
+              value={topic.summary}
+              onChange={e => handleEdit(topic.id, "summary", e.target.value)}
+            />
+            <label>Σύνοψη</label>
+          </div>
+          {topic.fileName && <p className="text-sm text-white">Αρχείο: {topic.fileName}</p>}
         </div>
       ))}
     </div>
@@ -306,8 +349,16 @@ function InitialAssignment({ user, topics = [], setTopics }) {
       <h2 className="text-xl font-bold">Αρχική Ανάθεση Θέματος σε Φοιτητή</h2>
       {/* Search form */}
       <div className="flex space-x-2">
-        <input className="border p-2 flex-1" placeholder="Αναζήτηση με ΑΜ ή Όνομα" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-        <button className="bg-blue-500 text-white px-4 py-2" onClick={handleSearch}>Αναζήτηση</button>
+        <div className="input-box flex-1">
+          <input
+            type="text"
+            required
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+          <label>Πληκτρολογίστε ΑΜ</label>
+        </div>
+        <button className="bg-[#0ef] text-[#1f293a] px-4 py-2" onClick={handleSearch}>Αναζήτηση</button>
       </div>
       {/* Search results */}
       {filteredStudents.length > 0 && (
@@ -315,7 +366,7 @@ function InitialAssignment({ user, topics = [], setTopics }) {
           <h3 className="font-semibold mt-4">Αποτελέσματα:</h3>
           {filteredStudents.map(student => (
             <div key={student.username} className="border p-4 my-2 rounded">
-              <p>Όνομα: {student.name} | ΑΜ: {student.username}</p>
+              <p>Όνομα: {student.name} | ΑΜ: {student.student_number}</p>
               <div className="mt-2 space-y-2">
                 {availableTopics.map(topic => (
                   <div key={topic.id} className="border p-2">
@@ -349,16 +400,214 @@ function Student({ user, topics = [] }) {
   const professorTopics = (topics || []).filter(t => t.professor);
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
-      <h2 className="text-xl font-bold">Καλωσορίσατε Φοιτητή: {user.name}</h2>
-      <h3 className="text-lg font-semibold mt-4">Διαθέσιμα Θέματα</h3>
-      {professorTopics.map(topic => (
+      <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
+      {/* Κουμπί επεξεργασίας προφίλ */}
+      <button
+        className="bg-[#0ef] text-white px-3 py-1 mb-4"
+        onClick={handleShowProfile}
+      >
+        Επεξεργασία Προφίλ
+      </button>
+      {assignedTopics.length === 0 && (
+        <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
+      )}
+      {assignedTopics.map(topic => (
         <div key={topic.id} className="border p-4 mb-2">
           <h4 className="font-bold">{topic.title}</h4>
           <p className="text-sm text-gray-600">{topic.summary}</p>
           <p className="text-sm">Εισηγητής: {topic.professor}</p>
-          {topic.fileName && <p className="text-sm text-blue-600">Αρχείο: {topic.fileName}</p>}
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mt-2"
+            onClick={() => handleShowDetails(topic)}
+          >
+            Προβολή θέματος
+          </button>
         </div>
       ))}
+
+      {/* Modal με λεπτομέρειες διπλωματικής */}
+      {showDetails && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button
+              className="absolute top-2 right-2 text-gray-500"
+              onClick={handleCloseDetails}
+            >
+              &times;
+            </button>
+            {loadingDetails && <div>Φόρτωση...</div>}
+            {!loadingDetails && details && (
+              details.error ? (
+                <div className="text-red-500">{details.error}</div>
+              ) : (
+                <div>
+                  <h3 className="text-xl font-bold mb-2">{details.title}</h3>
+                  <p className="mb-2">{details.summary}</p>
+                  {details.fileName && (
+                    <div className="mb-2">
+                      <button
+                        className="text-blue-600 underline"
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "white" }}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            const response = await fetch(`/uploads/${details.fileName}`);
+                            if (!response.ok) {
+                              alert("Το αρχείο δεν βρέθηκε στον server.");
+                              return;
+                            }
+                            const blob = await response.blob();
+                            // Επιτρέπουμε λήψη ανεξαρτήτως mime type (μερικοί browsers/servers δεν στέλνουν σωστό type)
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = details.fileName.endsWith('.pdf') ? details.fileName : "file.pdf";
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            window.URL.revokeObjectURL(url);
+                          } catch {
+                            alert("Αποτυχία λήψης αρχείου από τον server.");
+                          }
+                        }}
+                      >
+                        Συνημμένο αρχείο περιγραφής
+                      </button>
+                    </div>
+                  )}
+                  <p className="mb-2">
+                    <strong>Κατάσταση:</strong> {details.status || "--"}
+                  </p>
+                  <p className="mb-2">
+                    <strong>Επίσημη ανάθεση:</strong>{" "}
+                    {details.official_assignment_date
+                      ? new Date(details.official_assignment_date).toLocaleString("el-GR")
+                      : "--"}
+                  </p>
+                  {details.official_assignment_date && (
+                    <p className="mb-2">
+                      <strong>Χρόνος από ανάθεση:</strong>{" "}
+                      {timeSince(details.official_assignment_date)}
+                    </p>
+                  )}
+                  <div className="mb-2 fade-in-committee">
+                    <strong>Επιτροπή:</strong>
+                    {details.committee && details.committee.length > 0 ? (
+                      <ul className="list-disc ml-6 fade-in-committee">
+                        {details.committee.map((m, i) => (
+                          <li key={i} className="fade-in-committee">
+                            {m.name} {m.surname} ({m.role})
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="fade-in-committee"> Δεν έχουν οριστεί μέλη.</span>
+                    )}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal επεξεργασίας προφίλ */}
+      {showProfile && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="modal-content">
+            <button
+              className="absolute top-2 right-2 text-gray-500"
+              onClick={() => setShowProfile(false)}
+            >
+              &times;
+            </button>
+            {profileLoading && <div>Φόρτωση...</div>}
+            {!profileLoading && profile && (
+              profile.error ? (
+                <div className="text-red-500">{profile.error}</div>
+              ) : (
+                <form onSubmit={handleSaveProfile} className="space-y-3 profile-form">
+                  <h3 className="text-xl font-bold mb-2">Επεξεργασία Προφίλ</h3>
+                  <div className="input-box">
+                    <input
+                      type="email"
+                      required
+                      value={profile.email || ""}
+                      onChange={handleProfileChange}
+                      name="email"
+                    />
+                    <label>Email</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="tel"
+                      required
+                      value={profile.mobile_telephone || ""}
+                      onChange={handleProfileChange}
+                      name="mobile_telephone"
+                    />
+                    <label>Κινητό Τηλέφωνο</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="tel"
+                      required
+                      value={profile.landline_telephone || ""}
+                      onChange={handleProfileChange}
+                      name="landline_telephone"
+                    />
+                    <label>Σταθερό Τηλέφωνο</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.number || ""}
+                      onChange={handleProfileChange}
+                      name="number"
+                    />
+                    <label>Αριθμός</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.city || ""}
+                      onChange={handleProfileChange}
+                      name="city"
+                    />
+                    <label>Πόλη</label>
+                  </div>
+                  <div className="input-box">
+                    <input
+                      type="text"
+                      required
+                      value={profile.postcode || ""}
+                      onChange={handleProfileChange}
+                      name="postcode"
+                    />
+                    <label>Τ.Κ.</label>
+                  </div>
+                  <button
+                    className="bg-[#0ef] text-[#1f293a] px-4 py-2"
+                    type="submit"
+                    disabled={profileSaving}
+                  >
+                    Αποθήκευση
+                  </button>
+                </form>
+              )
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

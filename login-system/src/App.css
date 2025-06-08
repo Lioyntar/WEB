@@ -1,38 +1,446 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #1f293a;
+}
+
 .App {
-  text-align: center;
+    text-align: center;
+    width: 100%;
+    min-height: 100vh;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.container {
+    position: relative;
+    width: 256px;
+    height: 256px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+.container span {
+    position: absolute;
+    left: 0;
+    width: 32px;
+    height: 6px;
+    background: #2c4766;
+    border-radius: 8px;
+    transform-origin: 128px;
+    transform: scale(2.2) rotate(calc(var(--i) * (360deg / 50)));
+    animation: animateBlink 3s linear infinite;
+    animation-delay: calc(var(--i) * (3s / 50));
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+@keyframes animateBlink {
+    0% {
+        background: #0ef;
+    }
+    25% {
+        background: #2c4766;
+    }
 }
 
-.App-link {
-  color: #61dafb;
+.login-box {
+    position: absolute;
+    width: 400px;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.login-box form {
+    width: 100%;
+    padding: 0 50px;
 }
+
+h2 {
+    font-size: 2em;
+    color: #0ef;
+    text-align: center;
+}
+
+/* Make all text outside buttons white except headings and profile text */
+h2:not(.login-box h2), h3, h4 {
+    color: #0ef;
+}
+
+p, label, span, strong {
+    color: #fff;
+}
+
+/* Style for profile edit form */
+.profile-form h3,
+.profile-form input {
+    color: #0ef;
+}
+
+/* Style for modal content */
+.modal-content p,
+.modal-content strong {
+    color: #fff;
+}
+
+.input-box {
+    position: relative;
+    margin: 25px 0;
+}
+
+.input-box input {
+    width: 100%;
+    height: 50px;
+    background: transparent;
+    border: 2px solid #0ef;
+    outline: none;
+    border-radius: 40px;
+    font-size: 1em;
+    color: #fff;
+    padding: 0 20px;
+    transition: .5s ease;
+}
+
+.input-box input:focus,
+.input-box input:valid {
+    border-color: #0ef;
+}
+
+.input-box label {
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    transform: translateY(-50%);
+    font-size: 1em;
+    color: #fff;
+    pointer-events: none;
+    transition: .5s ease;
+}
+
+.input-box input:focus~label,
+.input-box input:valid~label {
+    top: 1px;
+    font-size: .8em;
+    background: #1f293a;
+    padding: 0 6px;
+    color: #0ef;
+}
+
+.input-box textarea {
+    width: 100%;
+    height: 80px;
+    background: transparent;
+    border: 2px solid #0ef;
+    outline: none;
+    border-radius: 40px;
+    font-size: 1em;
+    color: #fff;
+    padding: 20px;
+    transition: .5s ease;
+    resize: none;
+}
+
+.input-box textarea:focus,
+.input-box textarea:valid {
+    border-color: #0ef;
+}
+
+.input-box textarea:focus~label,
+.input-box textarea:valid~label {
+    top: 1px;
+    font-size: .8em;
+    background: #1f293a;
+    padding: 0 6px;
+    color: #0ef;
+}
+
+.forgot-pass {
+    margin: -15px 0 10px;
+    text-align: center;
+}
+
+.forgot-pass a {
+    font-size: .85em;
+    color: #fff;
+    text-decoration: none;
+}
+
+.forgot-pass a:hover {
+    text-decoration: underline;
+}
+
+.btn {
+    width: 100%;
+    height: 45px;
+    background: #0ef;
+    border: none;
+    outline: none;
+    border-radius: 40px;
+    cursor: pointer;
+    font-size: 1em;
+    color: #1f293a;
+    font-weight: 600;
+}
+
+/* Update button styles to match login button */
+button {
+    background: #0ef;
+    border: none;
+    outline: none;
+    border-radius: 40px;
+    cursor: pointer;
+    color: #1f293a;
+    font-weight: 600;
+    transition: .5s ease;
+    min-height: 45px;
+    padding: 0 30px;
+    font-size: 1em;
+}
+
+/* Specific styles for student page buttons */
+.student-page button {
+    width: 100%;
+    margin: 10px 0;
+}
+
+/* Style for profile edit inputs */
+input[type="text"],
+input[type="email"],
+input[type="tel"],
+input[type="number"] {
+    width: 100%;
+    height: 45px;
+    background: transparent;
+    border: 2px solid #0ef;
+    outline: none;
+    border-radius: 40px;
+    font-size: 1em;
+    color: #fff;
+    padding: 0 20px;
+    transition: .5s ease;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus,
+input[type="number"]:focus {
+    border-color: #0ef;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.signup-link {
+    margin: 20px 0 10px;
+    text-align: center;
+}
+
+.signup-link a {
+    font-size: 1em;
+    color: #0ef;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+::placeholder {
+    color: #fff;
+    opacity: 0.7;
+}
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.5em;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.modal-close:hover {
+    color: #0ef;
+}
+
+input[type="file"] {
+    width: 100%;
+    height: 45px;
+    background: transparent;
+    border: 2px solid #0ef;
+    outline: none;
+    border-radius: 40px;
+    font-size: 1em;
+    color: #fff;
+    padding: 0 20px;
+    transition: .5s ease;
+}
+
+input[type="file"]::file-selector-button {
+    background: #0ef;
+    border: none;
+    outline: none;
+    border-radius: 40px;
+    cursor: pointer;
+    color: #1f293a;
+    font-weight: 600;
+    padding: 0 20px;
+    margin-right: 10px;
+}
+
+input[type="file"]::file-selector-button:hover {
+    opacity: 0.9;
+}
+
+.input-box select {
+    width: 100%;
+    height: 45px;
+    background: transparent;
+    border: 2px solid #0ef;
+    outline: none;
+    border-radius: 40px;
+    font-size: 1em;
+    color: #fff;
+    padding: 0 20px;
+    transition: .5s ease;
+    cursor: pointer;
+}
+
+.input-box select:focus {
+    border-color: #0ef;
+}
+
+.input-box select option {
+    background: #1f293a;
+    color: #fff;
+    padding: 10px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.page-transition {
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, opacity;
+}
+
+.p-4 {
+    padding: 1rem;
+    opacity: 0;
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+h2, h3, h4, p, .input-box, button {
+    opacity: 0;
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.border {
+    border: 2px solid #0ef;
+    border-radius: 40px;
+    padding: 20px;
+    margin: 10px 0;
+    opacity: 0;
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.border:nth-child(1) { animation-delay: 0.1s; }
+.border:nth-child(2) { animation-delay: 0.2s; }
+.border:nth-child(3) { animation-delay: 0.3s; }
+.border:nth-child(4) { animation-delay: 0.4s; }
+.border:nth-child(5) { animation-delay: 0.5s; }
+
+.modal-content {
+    background: #1f293a;
+    border-radius: 40px;
+    padding: 20px;
+    opacity: 0;
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.fixed {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+.profile-form .input-box,
+.profile-form button[type="submit"] {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.profile-form .input-box:nth-of-type(1) { animation-delay: 0.15s; }
+.profile-form .input-box:nth-of-type(2) { animation-delay: 0.25s; }
+.profile-form .input-box:nth-of-type(3) { animation-delay: 0.35s; }
+.profile-form .input-box:nth-of-type(4) { animation-delay: 0.45s; }
+.profile-form .input-box:nth-of-type(5) { animation-delay: 0.55s; }
+.profile-form .input-box:nth-of-type(6) { animation-delay: 0.65s; }
+.profile-form button[type="submit"] { animation-delay: 0.75s; }
+
+.modal-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.5em;
+    cursor: pointer;
+    padding: 5px;
+}
+
+.profile-form button[type="submit"] {
+    width: 100%;
+    margin-top: 20px;
+}
+
+/* Add margin for Προσθήκη button */
+.add-button {
+    margin-top: 30px;
+}
+
+.fade-in-committee {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.thesis-list-item {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.thesis-list-item:nth-of-type(1) { animation-delay: 0.15s; }
+.thesis-list-item:nth-of-type(2) { animation-delay: 0.25s; }
+.thesis-list-item:nth-of-type(3) { animation-delay: 0.35s; }
+.thesis-list-item:nth-of-type(4) { animation-delay: 0.45s; }
+.thesis-list-item:nth-of-type(5) { animation-delay: 0.55s; }
