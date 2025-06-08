@@ -210,9 +210,9 @@ app.post("/api/topics/:id/assign", authenticate, async (req, res) => {
   const { id } = req.params; // Get topic id from URL
   const { studentId } = req.body; // Get student id from request
   const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Insert assignment into theses table
+  // Insert assignment into theses table with status 'υπό ανάθεση'
   await conn.execute(
-    "INSERT INTO theses (student_id, topic_id, supervisor_id, status, created_at) VALUES (?, ?, ?, 'ενεργή', NOW())",
+    "INSERT INTO theses (student_id, topic_id, supervisor_id, status, created_at) VALUES (?, ?, ?, 'υπό ανάθεση', NOW())",
     [studentId, id, req.user.id]
   );
   // Return success
@@ -343,6 +343,204 @@ app.patch("/api/student-profile", authenticate, async (req, res) => {
   );
   await conn.end();
   res.json({ success: true });
+});
+
+// Αναζήτηση διδασκόντων με email (για φοιτητές)
+app.get("/api/professors", authenticate, async (req, res) => {
+  if (req.user.role !== "Φοιτητής") return res.status(403).json({ error: "Forbidden" });
+  const search = req.query.search || "";
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    "SELECT id, name, email FROM professors WHERE email LIKE ?",
+    [`%${search}%`]
+  );
+  await conn.end();
+  res.json(rows);
+});
+
+// Επιστροφή προσκλήσεων για διπλωματική
+app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.email as professor_email, i.status
+     FROM invitations i
+     JOIN professors p ON i.invited_professor_id = p.id
+     WHERE i.thesis_id = ?`,
+    [thesisId]
+  );
+  await conn.end();
+  res.json(rows);
+});
+
+// Αποστολή πρόσκλησης σε διδάσκοντα
+app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, res) => {
+  const thesisId = req.params.thesisId;
+  const { professorId } = req.body;
+  if (!professorId) return res.status(400).json({ error: "Missing professorId" });
+  const conn = await mysql.createConnection(dbConfig);
+
+  try {
+    // Έλεγξε αν υπάρχει η διπλωματική
+    const [thesisRows] = await conn.execute(
+      "SELECT id FROM theses WHERE id = ?",
+      [thesisId]
+    );
+    if (!thesisRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
+    }
+
+    // Έλεγξε αν υπάρχει ο καθηγητής
+    const [profRows] = await conn.execute(
+      "SELECT id FROM professors WHERE id = ?",
+      [professorId]
+    );
+    if (!profRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: "Ο διδάσκων δεν βρέθηκε." });
+    }
+
+    // Έλεγχος αν υπάρχουν ήδη 2 αποδεκτές προσκλήσεις
+    const [accepted] = await conn.execute(
+      "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'accepted'",
+      [thesisId]
+    );
+    if (accepted[0].cnt >= 2) {
+      await conn.end();
+      return res.status(400).json({ error: "Έχουν ήδη αποδεχθεί 2 μέλη." });
+    }
+
+    // Μην επιτρέπεις διπλή πρόσκληση στον ίδιο
+    const [exists] = await conn.execute(
+      "SELECT id FROM invitations WHERE thesis_id = ? AND invited_professor_id = ?",
+      [thesisId, professorId]
+    );
+    if (exists.length > 0) {
+      await conn.end();
+      return res.status(400).json({ error: "Έχει ήδη σταλεί πρόσκληση σε αυτόν τον διδάσκοντα." });
+    }
+
+    // Εισαγωγή πρόσκλησης (χρησιμοποιώντας τα σωστά ονόματα στη βάση σου)
+    await conn.execute(
+      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_professor_id, status, invitation_date)
+       VALUES (?, ?, NULL, 'pending', NOW())`,
+      [thesisId, professorId]
+    );
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: "Σφάλμα βάσης κατά την αποστολή πρόσκλησης.", details: err.message });
+  }
+});
+
+// Διδάσκων αποδέχεται πρόσκληση για τριμελή
+app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const invitationId = req.params.invitationId;
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Ενημέρωσε την πρόσκληση ως accepted (αν δεν έχει ήδη απορριφθεί/ακυρωθεί)
+  const [invRows] = await conn.execute(
+    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ? AND status = 'pending'",
+    [invitationId, req.user.id]
+  );
+  if (!invRows.length) {
+    await conn.end();
+    return res.status(404).json({ error: "Invitation not found or already handled" });
+  }
+  const thesisId = invRows[0].thesis_id;
+
+  await conn.execute(
+    "UPDATE invitations SET status = 'accepted', response_date = NOW() WHERE id = ?",
+    [invitationId]
+  );
+
+  // Πόσοι έχουν αποδεχθεί;
+  const [acceptedRows] = await conn.execute(
+    "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'accepted'",
+    [thesisId]
+  );
+  const acceptedCount = acceptedRows[0].cnt;
+
+  if (acceptedCount >= 2) {
+    // Ενημέρωσε τη διπλωματική ως ενεργή
+    await conn.execute(
+      "UPDATE theses SET status = 'ενεργή' WHERE id = ?",
+      [thesisId]
+    );
+    // Ακύρωσε όλες τις υπόλοιπες εκκρεμείς προσκλήσεις
+    await conn.execute(
+      "UPDATE invitations SET status = 'cancelled' WHERE thesis_id = ? AND status = 'pending'",
+      [thesisId]
+    );
+  }
+
+  await conn.end();
+  res.json({ success: true, thesisActivated: acceptedCount >= 2 });
+});
+
+// Διδάσκων απορρίπτει πρόσκληση για τριμελή
+app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const invitationId = req.params.invitationId;
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Ενημέρωσε την πρόσκληση ως rejected (αν δεν έχει ήδη αποδεχθεί/ακυρωθεί)
+  const [invRows] = await conn.execute(
+    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ? AND status = 'pending'",
+    [invitationId, req.user.id]
+  );
+  if (!invRows.length) {
+    await conn.end();
+    return res.status(404).json({ error: "Invitation not found or already handled" });
+  }
+
+  await conn.execute(
+    "UPDATE invitations SET status = 'rejected', response_date = NOW() WHERE id = ?",
+    [invitationId]
+  );
+
+  await conn.end();
+  res.json({ success: true });
+});
+
+// Διαγραφή θέματος (μόνο από τον ιδιοκτήτη καθηγητή)
+app.delete("/api/topics/:id", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const { id } = req.params;
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Διαγραφή μόνο αν το θέμα ανήκει στον καθηγητή
+  const [result] = await conn.execute(
+    "DELETE FROM thesis_topics WHERE id = ? AND professor_id = ?",
+    [id, req.user.id]
+  );
+  await conn.end();
+  if (result.affectedRows > 0) {
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: "Θέμα δεν βρέθηκε ή δεν έχετε δικαίωμα διαγραφής." });
+  }
+});
+
+// Προσκλήσεις που έχει λάβει ο διδάσκων για τριμελείς (pending/accepted/rejected)
+app.get("/api/invitations/received", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT i.id, i.status, t.title as topic_title, s.name as student_name, s.surname as student_surname, s.student_number
+     FROM invitations i
+     JOIN theses th ON i.thesis_id = th.id
+     JOIN thesis_topics t ON th.topic_id = t.id
+     JOIN students s ON th.student_id = s.id
+     WHERE i.invited_professor_id = ?
+     ORDER BY i.id DESC`,
+    [req.user.id]
+  );
+  await conn.end();
+  res.json(rows);
 });
 
 // Start the server on port 5000

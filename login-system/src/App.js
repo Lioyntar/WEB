@@ -122,14 +122,122 @@ function PrivateRoute({ user, role, children }) {
 // Teacher dashboard
 function Teacher({ user, topics, setTopics }) {
   const navigate = useNavigate();
+
+  // State for invitations modal
+  const [showInvitations, setShowInvitations] = useState(false);
+  const [invitations, setInvitations] = useState([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+
+  // Φόρτωση προσκλήσεων
+  const handleShowInvitations = async () => {
+    setShowInvitations(true);
+    setLoadingInvitations(true);
+    setInviteError("");
+    try {
+      const res = await fetch("/api/invitations/received", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setInvitations(await res.json());
+      } else {
+        setInviteError("Αποτυχία φόρτωσης προσκλήσεων.");
+      }
+    } catch {
+      setInviteError("Αποτυχία φόρτωσης προσκλήσεων.");
+    }
+    setLoadingInvitations(false);
+  };
+
+  // Αποδοχή πρόσκλησης
+  const handleAccept = async (invitationId) => {
+    setInviteError("");
+    try {
+      const res = await fetch(`/api/invitations/${invitationId}/accept`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setInvitations(invitations.map(inv =>
+          inv.id === invitationId ? { ...inv, status: "accepted" } : inv
+        ));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setInviteError(err.error || "Αποτυχία αποδοχής πρόσκλησης.");
+      }
+    } catch {
+      setInviteError("Αποτυχία αποδοχής πρόσκλησης.");
+    }
+  };
+
+  // Απόρριψη πρόσκλησης
+  const handleReject = async (invitationId) => {
+    setInviteError("");
+    try {
+      const res = await fetch(`/api/invitations/${invitationId}/reject`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setInvitations(invitations.map(inv =>
+          inv.id === invitationId ? { ...inv, status: "rejected" } : inv
+        ));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setInviteError(err.error || "Αποτυχία απόρριψης πρόσκλησης.");
+      }
+    } catch {
+      setInviteError("Αποτυχία απόρριψης πρόσκλησης.");
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
       {/* Navigation buttons */}
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/assign")}>Αρχική Ανάθεση Θέματος σε Φοιτητή</button>
+      <button className="bg-green-600 text-white px-4 py-2 rounded w-full" onClick={handleShowInvitations}>Προβολή προσκλήσεων συμμετοχής σε τριμελή</button>
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
+
+      {/* Modal για προσκλήσεις */}
+      {showInvitations && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowInvitations(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-2">Προσκλήσεις για τριμελείς επιτροπές</h3>
+            {loadingInvitations && <div>Φόρτωση...</div>}
+            {inviteError && <div className="text-red-500">{inviteError}</div>}
+            {!loadingInvitations && invitations.length === 0 && (
+              <div className="text-gray-500">Δεν υπάρχουν ενεργές προσκλήσεις.</div>
+            )}
+            {!loadingInvitations && invitations.length > 0 && (
+              <ul>
+                {invitations.map(inv => (
+                  <li key={inv.id} className="border p-3 mb-2 rounded">
+                    <div>
+                      <strong>Μήνυμα:</strong> Πρόσκληση για την συμμετοχή σας στην τριμελή επιτροπή για την εξέταση της προπτυχιακής διπλωματικής μου εργασίας από τον φοιτητή {inv.student_name} {inv.student_surname} ({inv.student_number})
+                    </div>
+                    <div>
+                      <strong>Θέμα:</strong> {inv.topic_title}
+                    </div>
+                    <div>
+                      <strong>Κατάσταση:</strong> {inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : "Απορριφθείσα"}
+                    </div>
+                    {inv.status === "pending" && (
+                      <div className="mt-2 space-x-2">
+                        <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={() => handleAccept(inv.id)}>Αποδοχή</button>
+                        <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={() => handleReject(inv.id)}>Απόρριψη</button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -244,6 +352,18 @@ function TopicManagement({ user, topics = [], setTopics }) {
     }
   };
 
+  // Διαγραφή θέματος
+  const handleDelete = async (id) => {
+    if (!window.confirm("Θέλετε σίγουρα να διαγράψετε το θέμα;")) return;
+    const res = await fetch(`/api/topics/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${user.token}` }
+    });
+    if (res.ok) {
+      setTopics(topics.filter(topic => topic.id !== id));
+    }
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Δημιουργία Νέου Θέματος</h2>
@@ -271,23 +391,32 @@ function TopicManagement({ user, topics = [], setTopics }) {
       <h2 className="text-xl font-bold mt-6">Τα Θέματά Μου</h2>
       {/* List of topics owned by professor */}
       {topics.filter(t => t.professor === user.name).map(topic => (
-        <div key={topic.id} className="border p-4 mb-2">
-          <div className="input-box">
-            <input
-              type="text"
-              value={topic.title}
-              onChange={e => handleEdit(topic.id, "title", e.target.value)}
-            />
-            <label>Όνομα θέματος</label>
+        <div key={topic.id} className="border p-4 mb-2 flex items-center">
+          <div className="flex-1">
+            <div className="input-box">
+              <input
+                type="text"
+                value={topic.title}
+                onChange={e => handleEdit(topic.id, "title", e.target.value)}
+              />
+              <label>Όνομα θέματος</label>
+            </div>
+            <div className="input-box">
+              <textarea
+                value={topic.summary}
+                onChange={e => handleEdit(topic.id, "summary", e.target.value)}
+              />
+              <label>Σύνοψη</label>
+            </div>
+            {topic.fileName && <p className="text-sm text-white">Αρχείο: {topic.fileName}</p>}
           </div>
-          <div className="input-box">
-            <textarea
-              value={topic.summary}
-              onChange={e => handleEdit(topic.id, "summary", e.target.value)}
-            />
-            <label>Σύνοψη</label>
-          </div>
-          {topic.fileName && <p className="text-sm text-white">Αρχείο: {topic.fileName}</p>}
+          <button
+            className="ml-4 bg-red-600 text-white px-3 py-1 rounded"
+            onClick={() => handleDelete(topic.id)}
+            title="Διαγραφή θέματος"
+          >
+            Διαγραφή
+          </button>
         </div>
       ))}
     </div>
@@ -427,6 +556,14 @@ function Student({ user, topics = [] }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
 
+  // State for thesis management modal
+  const [showManage, setShowManage] = useState(false);
+  const [manageLoading, setManageLoading] = useState(false);
+  const [committeeInvitations, setCommitteeInvitations] = useState([]);
+  const [profSearch, setProfSearch] = useState("");
+  const [profResults, setProfResults] = useState([]);
+  const [manageError, setManageError] = useState("");
+
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
@@ -506,6 +643,91 @@ function Student({ user, topics = [] }) {
     setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 
+  // Βρες τη διπλωματική του φοιτητή που είναι "υπό ανάθεση"
+  const thesisUnderAssignment = details && details.status === "υπό ανάθεση" ? details : null;
+
+  // Βρες το θέμα που έχει ανατεθεί στον φοιτητή (αν υπάρχει)
+  const assignedTopic = (topics || []).find(t => t.assignedTo === user.username);
+
+  // Βρες λεπτομέρειες για το θέμα που έχει ανατεθεί (αν υπάρχουν)
+  // (details μπορεί να είναι null αν δεν έχει πατηθεί "Προβολή θέματος")
+  // Αν δεν υπάρχουν details, χρησιμοποίησε assignedTopic για το id και status
+  const thesisId = details?.id || assignedTopic?.id;
+  const thesisStatus = details?.status || assignedTopic?.status;
+
+  // Άνοιγμα modal διαχείρισης
+  const handleShowManage = async () => {
+    if (!thesisId) return;
+    setShowManage(true);
+    setManageLoading(true);
+    setManageError("");
+    try {
+      const res = await fetch(`/api/thesis-invitations/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setCommitteeInvitations(await res.json());
+      } else {
+        setCommitteeInvitations([]);
+      }
+    } catch {
+      setCommitteeInvitations([]);
+    }
+    setManageLoading(false);
+  };
+
+  // Αναζήτηση διδάσκοντα με email
+  const handleProfSearch = async () => {
+    setManageError("");
+    setProfResults([]);
+    if (!profSearch) return;
+    try {
+      const res = await fetch(`/api/professors?search=${encodeURIComponent(profSearch)}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setProfResults(await res.json());
+      } else {
+        setManageError("Δεν βρέθηκαν διδάσκοντες.");
+      }
+    } catch {
+      setManageError("Σφάλμα αναζήτησης.");
+    }
+  };
+
+  // Αποστολή πρόσκλησης
+  const handleInvite = async (professorId) => {
+    setManageError("");
+    try {
+      // Χρησιμοποίησε thesisId αντί για details.id για να δουλεύει πάντα
+      const idToUse = thesisId;
+      const res = await fetch(`/api/thesis-invitations/${idToUse}/invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ professorId })
+      });
+      if (res.ok) {
+        // Ενημέρωσε τις προσκλήσεις
+        const updated = await fetch(`/api/thesis-invitations/${idToUse}`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        setCommitteeInvitations(await updated.json());
+      } else {
+        // Διάβασε το error message από το backend
+        const err = await res.json().catch(() => ({}));
+        setManageError(err.error || "Αποτυχία αποστολής πρόσκλησης.");
+      }
+    } catch {
+      setManageError("Αποτυχία αποστολής πρόσκλησης.");
+    }
+  };
+
+  // Υπολογισμός αποδεκτών προσκλήσεων
+  const acceptedCount = committeeInvitations.filter(inv => inv.status === "accepted").length;
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
@@ -516,6 +738,16 @@ function Student({ user, topics = [] }) {
       >
         Επεξεργασία Προφίλ
       </button>
+      {/* Κουμπί διαχείρισης διπλωματικής */}
+      {assignedTopic && (
+        <button
+          className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+          onClick={handleShowManage}
+          disabled={!thesisStatus || thesisStatus.trim().toLowerCase() !== "υπό ανάθεση"}
+        >
+          Διαχείριση διπλωματικής εργασίας
+        </button>
+      )}
       {assignedTopics.length === 0 && (
         <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
       )}
@@ -711,6 +943,69 @@ function Student({ user, topics = [] }) {
                   </button>
                 </form>
               )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal διαχείρισης διπλωματικής */}
+      {showManage && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManage(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-2">Διαχείριση Τριμελούς Επιτροπής</h3>
+            {manageLoading && <div>Φόρτωση...</div>}
+            {!manageLoading && (
+              <>
+                <div className="mb-2">
+                  <strong>Προσκληθέντες:</strong>
+                  <ul>
+                    {committeeInvitations.map(inv => (
+                      <li key={inv.id}>
+                        {inv.professor_name} ({inv.professor_email}) - {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="text-green-700 mt-2">
+                    Αποδεκτοί: {acceptedCount} / 2
+                  </div>
+                  {acceptedCount >= 2 && (
+                    <div className="text-green-700 font-bold">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
+                  )}
+                </div>
+                {acceptedCount < 2 && (
+                  <>
+                    <div className="mb-2">
+                      <input
+                        className="border p-2 w-full"
+                        placeholder="Αναζήτηση διδάσκοντα με email"
+                        value={profSearch}
+                        onChange={e => setProfSearch(e.target.value)}
+                      />
+                      <button className="bg-[#0ef] text-[#1f293a] px-3 py-1 mt-2" onClick={handleProfSearch}>Αναζήτηση</button>
+                    </div>
+                    {manageError && <div className="text-red-500">{manageError}</div>}
+                    {profResults.length > 0 && (
+                      <div className="mb-2">
+                        <ul>
+                          {profResults.map(prof => (
+                            <li key={prof.id}>
+                              {prof.name} ({prof.email})
+                              <button
+                                className="ml-2 bg-green-500 text-white px-2 py-1"
+                                onClick={() => handleInvite(prof.id)}
+                                disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
+                              >
+                                Πρόσκληση
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
