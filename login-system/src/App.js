@@ -946,72 +946,73 @@ function Student({ user, topics = [] }) {
 
       {/* Modal διαχείρισης διπλωματικής */}
       {showManage && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
-          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+        <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManage(false)}>&times;</button>
-            <h3 className="text-xl font-bold mb-4">Διαχείριση Τριμελούς Επιτροπής</h3>
-            {manageLoading && <div>Φόρτωση...</div>}
-            {!manageLoading && (
-              <>
-                <div className="mb-4">
-                  <strong className="text-lg">Προσκληθέντες:</strong>
-                  <ul className="mt-2 space-y-2">
-                    {committeeInvitations.map(inv => (
-                      <li key={inv.id} className="border p-3 rounded">
-                        <span className="text-white">{inv.professor_name} ({inv.professor_email})</span> - 
-                        <span className="text-white ml-2">
-                          {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="text-white mt-4">
-                    <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
-                  </div>
-                  {acceptedCount >= 2 && (
-                    <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
-                  )}
-                </div>
-                {acceptedCount < 2 && (
-                  <>
+            {manageLoading ? (
+                <div>Φόρτωση...</div>
+            ) : (
+                <div className="fade-in-content">
+                    <h3 className="text-xl font-bold mb-4">Διαχείριση Τριμελούς Επιτροπής</h3>
                     <div className="mb-4">
-                      <div className="input-box">
-                        <input
-                          type="text"
-                          required
-                          value={profSearch}
-                          onChange={e => setProfSearch(e.target.value)}
-                        />
-                        <label>Αναζήτηση διδάσκοντα με email</label>
-                      </div>
-                      <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 mt-4 w-full" onClick={handleProfSearch}>Αναζήτηση</button>
-                    </div>
-                    {manageError && <div style={{ color: '#0ef' }}>{manageError}</div>}
-                    {profResults.length > 0 && (
-                      <div className="mb-4">
-                        <ul className="space-y-2">
-                          {profResults.map(prof => (
-                            <li key={prof.id} className="border p-3 rounded">
-                              <span className="text-white">{prof.name} ({prof.email})</span>
-                              <button
-                                className="ml-2 bg-[#0ef] text-[#1f293a] px-3 py-1 rounded"
-                                onClick={() => handleInvite(prof.id)}
-                                disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
-                              >
-                                Πρόσκληση
-                              </button>
-                            </li>
-                          ))}
+                        <strong className="text-lg">Προσκληθέντες:</strong>
+                        <ul className="mt-2 space-y-2">
+                            {committeeInvitations.map(inv => (
+                                <li key={inv.id} className="border p-3 rounded">
+                                    <span className="text-white">{inv.professor_name} ({inv.professor_email})</span> - 
+                                    <span className="text-white ml-2">
+                                        {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
+                                    </span>
+                                </li>
+                            ))}
                         </ul>
-                      </div>
+                        <div className="text-white mt-4">
+                            <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
+                        </div>
+                        {acceptedCount >= 2 && (
+                            <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
+                        )}
+                    </div>
+                    {acceptedCount < 2 && (
+                        <>
+                            <div className="mb-4">
+                                <div className="input-box">
+                                    <input
+                                        type="text"
+                                        required
+                                        value={profSearch}
+                                        onChange={e => setProfSearch(e.target.value)}
+                                    />
+                                    <label>Αναζήτηση διδάσκοντα με email</label>
+                                </div>
+                                <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 mt-4 w-full" onClick={handleProfSearch}>Αναζήτηση</button>
+                            </div>
+                            {manageError && <div style={{ color: '#0ef' }}>{manageError}</div>}
+                            {profResults.length > 0 && (
+                                <div className="mb-4">
+                                    <ul className="space-y-2">
+                                        {profResults.map(prof => (
+                                            <li key={prof.id} className="border p-3 rounded">
+                                                <span className="text-white">{prof.name} ({prof.email})</span>
+                                                <button
+                                                    className="ml-2 bg-[#0ef] text-[#1f293a] px-3 py-1 rounded"
+                                                    onClick={() => handleInvite(prof.id)}
+                                                    disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
+                                                >
+                                                    Πρόσκληση
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </>
                     )}
-                  </>
-                )}
-              </>
+                </div>
             )}
-          </div>
         </div>
-      )}
+    </div>
+)}
     </div>
   );
 }
