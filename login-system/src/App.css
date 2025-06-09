@@ -523,11 +523,12 @@ h2, h3, h4, p, .input-box, button {
 .input-box input:focus,
 .input-box input:valid,
 .input-box textarea:focus,
-.input-box textarea:valid {
+.input-box textarea:valid 
   /* gradient border handles the highlight now */
-}
+
 
 .fade-in-content {
     opacity: 0;
     animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
+

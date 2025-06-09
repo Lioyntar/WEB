@@ -129,7 +129,7 @@ function Teacher({ user, topics, setTopics }) {
   const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [inviteError, setInviteError] = useState("");
 
-  // Φόρτωση προσκλήσεων
+  // Load invitations
   const handleShowInvitations = async () => {
     setShowInvitations(true);
     setLoadingInvitations(true);
@@ -149,7 +149,7 @@ function Teacher({ user, topics, setTopics }) {
     setLoadingInvitations(false);
   };
 
-  // Αποδοχή πρόσκλησης
+  // Accept invitation
   const handleAccept = async (invitationId) => {
     setInviteError("");
     try {
@@ -168,7 +168,7 @@ function Teacher({ user, topics, setTopics }) {
     }
   };
 
-  // Απόρριψη πρόσκλησης
+  // Reject invitation
   const handleReject = async (invitationId) => {
     setInviteError("");
     try {
@@ -197,39 +197,43 @@ function Teacher({ user, topics, setTopics }) {
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
 
-      {/* Modal για προσκλήσεις */}
+      {/* Modal for invitations */}
       {showInvitations && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowInvitations(false)}>&times;</button>
-            <h3 className="text-xl font-bold mb-4">Προσκλήσεις για τριμελείς επιτροπές</h3>
-            {loadingInvitations && <div>Φόρτωση...</div>}
-            {inviteError && <div className="text-red-500">{inviteError}</div>}
-            {!loadingInvitations && invitations.length === 0 && (
-              <div className="text-gray-500">Δεν υπάρχουν ενεργές προσκλήσεις.</div>
-            )}
-            {!loadingInvitations && invitations.length > 0 && (
-              <ul>
-                {invitations.map(inv => (
-                  <li key={inv.id} className="border p-3 mb-2 rounded bg-[#1f293a]">
-                    <div>
-                      <strong className="text-white">Μήνυμα:</strong> <span className="text-white">Πρόσκληση για την συμμετοχή σας στην τριμελή επιτροπή για την εξέταση της προπτυχιακής διπλωματικής μου εργασίας από τον φοιτητή {inv.student_name} {inv.student_surname} ({inv.student_number})</span>
-                    </div>
-                    <div>
-                      <strong className="text-white">Θέμα:</strong> <span className="text-white">{inv.topic_title}</span>
-                    </div>
-                    <div>
-                      <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}</span>
-                    </div>
-                    {inv.status === "pending" && (
-                      <div className="mt-2 space-x-2">
-                        <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={() => handleAccept(inv.id)}>Αποδοχή</button>
-                        <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={() => handleReject(inv.id)}>Απόρριψη</button>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
+            {loadingInvitations ? (
+              <div>Φόρτωση...</div>
+            ) : (
+              <div className="fade-in-content">
+                <h3 className="text-xl font-bold mb-4">Προσκλήσεις για τριμελείς επιτροπές</h3>
+                {inviteError && <div className="text-red-500">{inviteError}</div>}
+                {invitations.length === 0 ? (
+                  <div className="text-gray-500">Δεν υπάρχουν ενεργές προσκλήσεις.</div>
+                ) : (
+                  <ul>
+                    {invitations.map(inv => (
+                      <li key={inv.id} className="border p-3 mb-2 rounded bg-[#1f293a]">
+                        <div>
+                          <strong className="text-white">Μήνυμα:</strong> <span className="text-white">Πρόσκληση για την συμμετοχή σας στην τριμελή επιτροπή για την εξέταση της προπτυχιακής διπλωματικής μου εργασίας από τον φοιτητή {inv.student_name} {inv.student_surname} ({inv.student_number})</span>
+                        </div>
+                        <div>
+                          <strong className="text-white">Θέμα:</strong> <span className="text-white">{inv.topic_title}</span>
+                        </div>
+                        <div>
+                          <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}</span>
+                        </div>
+                        {inv.status === "pending" && (
+                          <div className="mt-2 space-x-2">
+                            <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={() => handleAccept(inv.id)}>Αποδοχή</button>
+                            <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={() => handleReject(inv.id)}>Απόρριψη</button>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -237,6 +241,7 @@ function Teacher({ user, topics, setTopics }) {
     </div>
   );
 }
+
 
 // List of theses for teacher
 function ThesisList({ user, topics = [], setTopics }) {
