@@ -200,9 +200,9 @@ function Teacher({ user, topics, setTopics }) {
       {/* Modal για προσκλήσεις */}
       {showInvitations && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowInvitations(false)}>&times;</button>
-            <h3 className="text-xl font-bold mb-2">Προσκλήσεις για τριμελείς επιτροπές</h3>
+            <h3 className="text-xl font-bold mb-4">Προσκλήσεις για τριμελείς επιτροπές</h3>
             {loadingInvitations && <div>Φόρτωση...</div>}
             {inviteError && <div className="text-red-500">{inviteError}</div>}
             {!loadingInvitations && invitations.length === 0 && (
@@ -211,15 +211,15 @@ function Teacher({ user, topics, setTopics }) {
             {!loadingInvitations && invitations.length > 0 && (
               <ul>
                 {invitations.map(inv => (
-                  <li key={inv.id} className="border p-3 mb-2 rounded">
+                  <li key={inv.id} className="border p-3 mb-2 rounded bg-[#1f293a]">
                     <div>
-                      <strong>Μήνυμα:</strong> Πρόσκληση για την συμμετοχή σας στην τριμελή επιτροπή για την εξέταση της προπτυχιακής διπλωματικής μου εργασίας από τον φοιτητή {inv.student_name} {inv.student_surname} ({inv.student_number})
+                      <strong className="text-white">Μήνυμα:</strong> <span className="text-white">Πρόσκληση για την συμμετοχή σας στην τριμελή επιτροπή για την εξέταση της προπτυχιακής διπλωματικής μου εργασίας από τον φοιτητή {inv.student_name} {inv.student_surname} ({inv.student_number})</span>
                     </div>
                     <div>
-                      <strong>Θέμα:</strong> {inv.topic_title}
+                      <strong className="text-white">Θέμα:</strong> <span className="text-white">{inv.topic_title}</span>
                     </div>
                     <div>
-                      <strong>Κατάσταση:</strong> {inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}
+                      <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}</span>
                     </div>
                     {inv.status === "pending" && (
                       <div className="mt-2 space-x-2">
@@ -947,48 +947,54 @@ function Student({ user, topics = [] }) {
       {/* Modal διαχείρισης διπλωματικής */}
       {showManage && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
-          <div className="modal-content">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManage(false)}>&times;</button>
-            <h3 className="text-xl font-bold mb-2">Διαχείριση Τριμελούς Επιτροπής</h3>
+            <h3 className="text-xl font-bold mb-4">Διαχείριση Τριμελούς Επιτροπής</h3>
             {manageLoading && <div>Φόρτωση...</div>}
             {!manageLoading && (
               <>
-                <div className="mb-2">
-                  <strong>Προσκληθέντες:</strong>
-                  <ul>
+                <div className="mb-4">
+                  <strong className="text-lg">Προσκληθέντες:</strong>
+                  <ul className="mt-2 space-y-2">
                     {committeeInvitations.map(inv => (
-                      <li key={inv.id}>
-                        {inv.professor_name} ({inv.professor_email}) - {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
+                      <li key={inv.id} className="border p-3 rounded">
+                        <span className="text-white">{inv.professor_name} ({inv.professor_email})</span> - 
+                        <span className="text-white ml-2">
+                          {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
+                        </span>
                       </li>
                     ))}
                   </ul>
-                  <div className="text-green-700 mt-2">
-                    Αποδεκτοί: {acceptedCount} / 2
+                  <div className="text-white mt-4">
+                    <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
                   </div>
                   {acceptedCount >= 2 && (
-                    <div className="text-green-700 font-bold">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
+                    <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
                   )}
                 </div>
                 {acceptedCount < 2 && (
                   <>
-                    <div className="mb-2">
-                      <input
-                        className="border p-2 w-full"
-                        placeholder="Αναζήτηση διδάσκοντα με email"
-                        value={profSearch}
-                        onChange={e => setProfSearch(e.target.value)}
-                      />
-                      <button className="bg-[#0ef] text-[#1f293a] px-3 py-1 mt-2" onClick={handleProfSearch}>Αναζήτηση</button>
+                    <div className="mb-4">
+                      <div className="input-box">
+                        <input
+                          type="text"
+                          required
+                          value={profSearch}
+                          onChange={e => setProfSearch(e.target.value)}
+                        />
+                        <label>Αναζήτηση διδάσκοντα με email</label>
+                      </div>
+                      <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 mt-4 w-full" onClick={handleProfSearch}>Αναζήτηση</button>
                     </div>
-                    {manageError && <div className="text-red-500">{manageError}</div>}
+                    {manageError && <div style={{ color: '#0ef' }}>{manageError}</div>}
                     {profResults.length > 0 && (
-                      <div className="mb-2">
-                        <ul>
+                      <div className="mb-4">
+                        <ul className="space-y-2">
                           {profResults.map(prof => (
-                            <li key={prof.id}>
-                              {prof.name} ({prof.email})
+                            <li key={prof.id} className="border p-3 rounded">
+                              <span className="text-white">{prof.name} ({prof.email})</span>
                               <button
-                                className="ml-2 bg-green-500 text-white px-2 py-1"
+                                className="ml-2 bg-[#0ef] text-[#1f293a] px-3 py-1 rounded"
                                 onClick={() => handleInvite(prof.id)}
                                 disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
                               >
