@@ -384,8 +384,6 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
     let thesisRow;
     if (req.user.role === "Φοιτητής") {
       // Βρες αν ο φοιτητής έχει διπλωματική με το συγκεκριμένο θέμα (topic_id)
-      // Πρώτα βρες το topic_id από το thesis_topics (για το κουμπί "Διαχείριση διπλωματικής" στέλνεις topic id, όχι thesis id)
-      // Άρα, βρες τη διπλωματική που έχει student_id = req.user.id ΚΑΙ topic_id = thesisId
       const [rows] = await conn.execute(
         "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
         [thesisId, req.user.id]
@@ -438,12 +436,13 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
       return res.status(400).json({ error: "Έχει ήδη σταλεί πρόσκληση σε αυτόν τον διδάσκοντα." });
     }
 
-    // Εισαγωγή πρόσκλησης
+    // Εισαγωγή πρόσκλησης με status = 'pending' by default
     await conn.execute(
       `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_professor_id, status, invitation_date)
        VALUES (?, ?, NULL, 'pending', NOW())`,
       [thesisRow.id, professorId]
     );
+
     await conn.end();
     res.json({ success: true });
   } catch (err) {

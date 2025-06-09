@@ -209,7 +209,7 @@ function Teacher({ user, topics, setTopics }) {
                 <h3 className="text-xl font-bold mb-4">Προσκλήσεις για τριμελείς επιτροπές</h3>
                 {inviteError && <div className="text-red-500">{inviteError}</div>}
                 {invitations.length === 0 ? (
-                  <div className="text-gray-500">Δεν υπάρχουν ενεργές προσκλήσεις.</div>
+                  <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν ενεργές προσκλήσεις.</span></div>
                 ) : (
                   <ul>
                     {invitations.map(inv => (
@@ -221,9 +221,16 @@ function Teacher({ user, topics, setTopics }) {
                           <strong className="text-white">Θέμα:</strong> <span className="text-white">{inv.topic_title}</span>
                         </div>
                         <div>
-                          <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{inv.status === "pending" ? "Εκκρεμεί" : inv.status === "accepted" ? "Αποδεκτή" : inv.status === "rejected" ? "Απορριφθείσα" : inv.status}</span>
+                          <strong className="text-white">Κατάσταση:</strong> <span className="text-white">
+                            {inv.status ? (
+                              inv.status.toLowerCase() === "pending" ? "Εκκρεμεί" :
+                              inv.status.toLowerCase() === "accepted" ? "Αποδεκτή" :
+                              inv.status.toLowerCase() === "rejected" ? "Απορριφθείσα" :
+                              inv.status
+                            ) : "Εκκρεμεί"}
+                          </span>
                         </div>
-                        {inv.status === "pending" && (
+                        {(!inv.status || inv.status.toLowerCase() === "pending") && (
                           <div className="mt-2 space-x-2">
                             <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={() => handleAccept(inv.id)}>Αποδοχή</button>
                             <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={() => handleReject(inv.id)}>Απόρριψη</button>
