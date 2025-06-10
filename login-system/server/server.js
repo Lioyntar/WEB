@@ -592,6 +592,27 @@ app.delete("/api/topics/:id", authenticate, async (req, res) => {
   res.json({ success: true });
 });
 
+// Προσκλήσεις που έχει λάβει ο διδάσκων για τριμελείς (pending/accepted/rejected)
+app.get("/api/invitations/received", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT i.id, i.status, t.title as topic_title, 
+            s.name as student_name, s.surname as student_surname, 
+            s.student_number
+     FROM invitations i
+     JOIN students s ON i.invited_by_student_id = s.id
+     JOIN theses th ON i.thesis_id = th.id
+     JOIN thesis_topics t ON th.topic_id = t.id
+     WHERE i.invited_professor_id = ?`,
+    [req.user.id]
+  );
+  
+  await conn.end();
+  res.json(rows);
+});
+
 // Start the server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
