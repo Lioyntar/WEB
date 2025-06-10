@@ -572,6 +572,24 @@ function Student({ user, topics = [] }) {
   const [profResults, setProfResults] = useState([]);
   const [manageError, setManageError] = useState("");
 
+  // Helper: fetch committee invitations for this thesis
+  const fetchCommitteeInvitations = async (idToUse) => {
+    setManageLoading(true);
+    try {
+      const res = await fetch(`/api/thesis-invitations/${idToUse}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setCommitteeInvitations(await res.json());
+      } else {
+        setCommitteeInvitations([]);
+      }
+    } catch {
+      setCommitteeInvitations([]);
+    }
+    setManageLoading(false);
+  };
+
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
@@ -657,32 +675,62 @@ function Student({ user, topics = [] }) {
   // Βρες το θέμα που έχει ανατεθεί στον φοιτητή (αν υπάρχει)
   const assignedTopic = (topics || []).find(t => t.assignedTo === user.username);
 
-  // Βρες λεπτομέρειες για το θέμα που έχει ανατεθεί (αν υπάρχουν)
-  // (details μπορεί να είναι null αν δεν έχει πατηθεί "Προβολή θέματος")
-  // Αν δεν υπάρχουν details, χρησιμοποίησε assignedTopic για το id και status
-  const thesisId = details?.id || assignedTopic?.id;
-  const thesisStatus = details?.status || assignedTopic?.status;
+  // Βρες το thesisId και το status της διπλωματικής (από assignedTopic)
+  // Επειδή το topics array έχει μόνο topic info, και το id είναι topic_id, πρέπει να κάνεις fetch τις προσκλήσεις με βάση το topic id και student id
+  // Άρα, όταν δεν υπάρχουν details, κάνε fetch το thesisId από το backend πριν ανοίξεις το modal
 
-  // Άνοιγμα modal διαχείρισης
-  const handleShowManage = async () => {
-    if (!thesisId) return;
-    setShowManage(true);
-    setManageLoading(true);
-    setManageError("");
+  const [realThesisId, setRealThesisId] = useState(null);
+  const [realThesisStatus, setRealThesisStatus] = useState(null);
+
+  // Helper για να βρεις το thesisId και status από το backend
+  const fetchThesisIdAndStatus = async () => {
+    if (!assignedTopic) return;
     try {
-      const res = await fetch(`/api/thesis-invitations/${thesisId}`, {
+      const res = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
         headers: { Authorization: `Bearer ${user.token}` }
       });
       if (res.ok) {
-        setCommitteeInvitations(await res.json());
-      } else {
-        setCommitteeInvitations([]);
+        const data = await res.json();
+        // Το details.id είναι topic_id, αλλά το debug.thesis_id (αν υπάρχει) είναι το thesis.id
+        setRealThesisId(data.debug?.thesis_id || data.thesis_id || data.id);
+        setRealThesisStatus(data.status);
       }
     } catch {
-      setCommitteeInvitations([]);
+      setRealThesisId(null);
+      setRealThesisStatus(null);
     }
-    setManageLoading(false);
   };
+
+  // Άνοιγμα modal διαχείρισης
+  const handleShowManage = async () => {
+    // Αν έχουμε ήδη details, πάρε το thesisId από εκεί
+    let thesisIdToUse = details?.debug?.thesis_id || details?.thesis_id || realThesisId;
+    if (!thesisIdToUse && assignedTopic) {
+      // Fetch το thesisId από το backend
+      await fetchThesisIdAndStatus();
+      // Θα ανοίξει το modal όταν το realThesisId γεμίσει (δες useEffect παρακάτω)
+      return;
+    }
+    if (!thesisIdToUse) return;
+    setShowManage(true);
+    setManageError("");
+    await fetchCommitteeInvitations(thesisIdToUse);
+  };
+
+  // Όταν γεμίσει το realThesisId από το fetch, άνοιξε το modal και φέρε τις προσκλήσεις
+  useEffect(() => {
+    if (realThesisId && showManage === false) {
+      setShowManage(true);
+      setManageError("");
+      fetchCommitteeInvitations(realThesisId);
+    }
+    // eslint-disable-next-line
+  }, [realThesisId]);
+
+  // Υπολογισμός αποδεκτών προσκλήσεων
+  const acceptedCount = committeeInvitations.filter(inv => inv.status === "accepted").length;
+
+  // --- Προσθήκη των handleProfSearch και handleInvite μέσα στη Student ---
 
   // Αναζήτηση διδάσκοντα με email
   const handleProfSearch = async () => {
@@ -706,23 +754,21 @@ function Student({ user, topics = [] }) {
   // Αποστολή πρόσκλησης
   const handleInvite = async (professorId) => {
     setManageError("");
-    
     // Check for existing invitations first
     const existingInv = committeeInvitations.find(inv => inv.professor_id === professorId);
     if (existingInv) {
       setManageError(
-        existingInv.status === 'accepted' 
-          ? "Η πρόσκληση έχει ήδη αποδεχθεί" 
+        existingInv.status === 'accepted'
+          ? "Η πρόσκληση έχει ήδη αποδεχθεί"
           : existingInv.status === 'rejected'
-          ? "Η πρόσκληση έχει ήδη απορριφθεί"
-          : "Η πρόσκληση είναι ήδη εκκρεμής"
+            ? "Η πρόσκληση έχει ήδη απορριφθεί"
+            : "Η πρόσκληση είναι ήδη εκκρεμής"
       );
       return;
     }
 
     try {
-      // Χρησιμοποίησε thesisId αντί για details.id για να δουλεύει πάντα
-      const idToUse = thesisId;
+      const idToUse = details?.debug?.thesis_id || details?.thesis_id || realThesisId;
       const res = await fetch(`/api/thesis-invitations/${idToUse}/invite`, {
         method: "POST",
         headers: {
@@ -731,14 +777,9 @@ function Student({ user, topics = [] }) {
         },
         body: JSON.stringify({ professorId })
       });
-      if (res.ok) {
-        // Ενημέρωσε τις προσκλήσεις
-        const updated = await fetch(`/api/thesis-invitations/${idToUse}`, {
-          headers: { Authorization: `Bearer ${user.token}` }
-        });
-        setCommitteeInvitations(await updated.json());
-      } else {
-        // Διάβασε το error message από το backend
+      // Πάντα κάνε refresh τη λίστα μετά από κάθε invite (ανεξαρτήτως επιτυχίας)
+      await fetchCommitteeInvitations(idToUse);
+      if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setManageError(err.error || "Αποτυχία αποστολής πρόσκλησης.");
       }
@@ -746,9 +787,6 @@ function Student({ user, topics = [] }) {
       setManageError("Αποτυχία αποστολής πρόσκλησης.");
     }
   };
-
-  // Υπολογισμός αποδεκτών προσκλήσεων
-  const acceptedCount = committeeInvitations.filter(inv => inv.status === "accepted").length;
 
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
@@ -765,7 +803,13 @@ function Student({ user, topics = [] }) {
         <button
           className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
           onClick={handleShowManage}
-          disabled={!thesisStatus || thesisStatus.trim().toLowerCase() !== "υπό ανάθεση"}
+          disabled={
+            !(
+              (details?.status || realThesisStatus || assignedTopic?.status || "")
+                .trim()
+                .toLowerCase() === "υπό ανάθεση"
+            )
+          }
         >
           Διαχείριση διπλωματικής εργασίας
         </button>
@@ -972,73 +1016,84 @@ function Student({ user, topics = [] }) {
 
       {/* Modal διαχείρισης διπλωματικής */}
       {showManage && (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
-        <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManage(false)}>&times;</button>
             {manageLoading ? (
-                <div>Φόρτωση...</div>
+              <div>Φόρτωση...</div>
             ) : (
-                <div className="fade-in-content">
-                    <h3 className="text-xl font-bold mb-4">Διαχείριση Τριμελούς Επιτροπής</h3>
-                    <div className="mb-4">
-                        <strong className="text-lg">Προσκληθέντες:</strong>
-                        <ul className="mt-2 space-y-2">
-                            {committeeInvitations.map(inv => (
-                                <li key={inv.id} className="border p-3 rounded">
-                                    <span className="text-white">{inv.professor_name} ({inv.professor_email})</span> - 
-                                    <span className="text-white ml-2">
-                                        {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="text-white mt-4">
-                            <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
-                        </div>
-                        {acceptedCount >= 2 && (
-                            <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
-                        )}
-                    </div>
-                    {acceptedCount < 2 && (
-                        <>
-                            <div className="mb-4">
-                                <div className="input-box">
-                                    <input
-                                        type="text"
-                                        required
-                                        value={profSearch}
-                                        onChange={e => setProfSearch(e.target.value)}
-                                    />
-                                    <label>Αναζήτηση διδάσκοντα με email</label>
-                                </div>
-                                <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 mt-4 w-full" onClick={handleProfSearch}>Αναζήτηση</button>
-                            </div>
-                            {manageError && <div style={{ color: '#0ef' }}>{manageError}</div>}
-                            {profResults.length > 0 && (
-                                <div className="mb-4">
-                                    <ul className="space-y-2">
-                                        {profResults.map(prof => (
-                                            <li key={prof.id} className="border p-3 rounded">
-                                                <span className="text-white">{prof.name} ({prof.email})</span>
-                                                <button
-                                                    className="ml-2 bg-[#0ef] text-[#1f293a] px-3 py-1 rounded"
-                                                    onClick={() => handleInvite(prof.id)}
-                                                    disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
-                                                >
-                                                    Πρόσκληση
-                                                </button>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </>
+              <div className="fade-in-content">
+                <h3 className="text-xl font-bold mb-4">Διαχείριση Τριμελούς Επιτροπής</h3>
+                <div className="mb-4">
+                  <strong className="text-lg">Προσκληθέντες:</strong>
+                  <ul className="mt-2 space-y-2">
+                    {committeeInvitations.length === 0 && (
+                      <li className="text-white">Δεν έχουν σταλεί προσκλήσεις.</li>
                     )}
+                    {committeeInvitations.map(inv => (
+                      <li key={inv.id} className="border p-3 rounded">
+                        <span className="text-white">
+                          {inv.professor_name} ({inv.professor_email})
+                        </span>
+                        <span className="text-white ml-2">
+                          {inv.status === "accepted"
+                            ? "Αποδεκτή"
+                            : inv.status === "pending"
+                            ? "Εκκρεμεί"
+                            : inv.status === "rejected"
+                            ? "Απορρίφθηκε"
+                            : inv.status ? inv.status : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="text-white mt-4">
+                    <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
+                  </div>
+                  {acceptedCount >= 2 && (
+                    <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
+                  )}
                 </div>
+                {acceptedCount < 2 && (
+                  <>
+                    <div className="mb-4">
+                      <div className="input-box">
+                        <input
+                          type="text"
+                          required
+                          value={profSearch}
+                          onChange={e => setProfSearch(e.target.value)}
+                        />
+                        <label>Αναζήτηση διδάσκοντα με email</label>
+                      </div>
+                      <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 mt-4 w-full" onClick={handleProfSearch}>Αναζήτηση</button>
+                    </div>
+                    {manageError && <div style={{ color: '#0ef' }}>{manageError}</div>}
+                    {profResults.length > 0 && (
+                      <div className="mb-4">
+                        <ul className="space-y-2">
+                          {profResults.map(prof => (
+                            <li key={prof.id} className="border p-3 rounded">
+                              <span className="text-white">{prof.name} ({prof.email})</span>
+                              <button
+                                className="ml-2 bg-[#0ef] text-[#1f293a] px-3 py-1 rounded"
+                                onClick={() => handleInvite(prof.id)}
+                                disabled={committeeInvitations.some(inv => inv.professor_id === prof.id)}
+                              >
+                                Πρόσκληση
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
+          </div>
         </div>
-    </div>
-)}
+      )}
     </div>
   );
 }
