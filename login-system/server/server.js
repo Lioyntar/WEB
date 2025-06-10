@@ -438,10 +438,27 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
 
     // Εισαγωγή πρόσκλησης με status = 'pending' by default
     await conn.execute(
-      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_professor_id, status, invitation_date)
-       VALUES (?, ?, NULL, 'pending', NOW())`,
+      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_student_id, status, invitation_date)
+       VALUES (?, ?, ?, 'pending', NOW())`,
+      [thesisRow.id, professorId, req.user.id]  // Use student ID
+    );
+
+    const [existing] = await conn.execute(
+      "SELECT id, status FROM invitations WHERE thesis_id = ? AND invited_professor_id = ?",
       [thesisRow.id, professorId]
     );
+
+    if (existing.length > 0) {
+      const status = existing[0].status;
+      await conn.end();
+      return res.status(400).json({
+        error: status === 'accepted' 
+          ? "Η πρόσκληση έχει ήδη αποδεχθεί" 
+          : status === 'rejected'
+            ? "Η πρόσκληση έχει ήδη απορριφθεί"
+            : "Η πρόσκληση έχει ήδη σταλεί"
+      });
+    }
 
     await conn.end();
     res.json({ success: true });
@@ -475,9 +492,11 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     [thesisId, req.user.id]
   );
 
-  // Διέγραψε την πρόσκληση
+  // Ενημέρωσε την κατάσταση της πρόσκλησης
   await conn.execute(
-    "DELETE FROM invitations WHERE id = ?",
+    `UPDATE invitations 
+     SET status = 'accepted', response_date = NOW() 
+     WHERE id = ?`,
     [invitationId]
   );
 
@@ -509,9 +528,11 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
     [thesisId, req.user.id]
   );
 
-  // Διέγραψε την πρόσκληση
+  // Ενημέρωσε την κατάσταση της πρόσκλησης
   await conn.execute(
-    "DELETE FROM invitations WHERE id = ?",
+    `UPDATE invitations 
+     SET status = 'rejected', response_date = NOW() 
+     WHERE id = ?`,
     [invitationId]
   );
 
@@ -541,17 +562,20 @@ app.delete("/api/topics/:id", authenticate, async (req, res) => {
 // Προσκλήσεις που έχει λάβει ο διδάσκων για τριμελείς (pending/accepted/rejected)
 app.get("/api/invitations/received", authenticate, async (req, res) => {
   if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  
   const conn = await mysql.createConnection(dbConfig);
   const [rows] = await conn.execute(
-    `SELECT i.id, i.status, t.title as topic_title, s.name as student_name, s.surname as student_surname, s.student_number
+    `SELECT i.id, i.status, t.title as topic_title, 
+            s.name as student_name, s.surname as student_surname, 
+            s.student_number
      FROM invitations i
+     JOIN students s ON i.invited_by_student_id = s.id
      JOIN theses th ON i.thesis_id = th.id
      JOIN thesis_topics t ON th.topic_id = t.id
-     JOIN students s ON th.student_id = s.id
-     WHERE i.invited_professor_id = ?
-     ORDER BY i.id DESC`,
+     WHERE i.invited_professor_id = ?`,
     [req.user.id]
   );
+  
   await conn.end();
   res.json(rows);
 });

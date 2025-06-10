@@ -706,6 +706,20 @@ function Student({ user, topics = [] }) {
   // Αποστολή πρόσκλησης
   const handleInvite = async (professorId) => {
     setManageError("");
+    
+    // Check for existing invitations first
+    const existingInv = committeeInvitations.find(inv => inv.professor_id === professorId);
+    if (existingInv) {
+      setManageError(
+        existingInv.status === 'accepted' 
+          ? "Η πρόσκληση έχει ήδη αποδεχθεί" 
+          : existingInv.status === 'rejected'
+          ? "Η πρόσκληση έχει ήδη απορριφθεί"
+          : "Η πρόσκληση είναι ήδη εκκρεμής"
+      );
+      return;
+    }
+
     try {
       // Χρησιμοποίησε thesisId αντί για details.id για να δουλεύει πάντα
       const idToUse = thesisId;
