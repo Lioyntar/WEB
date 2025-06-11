@@ -438,9 +438,9 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
 
     // Εισαγωγή πρόσκλησης με status = 'pending' by default
     await conn.execute(
-      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_professor_id, status, invitation_date)
-       VALUES (?, ?, NULL, 'pending', NOW())`,
-      [thesisRow.id, professorId]
+      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_student_id, status, invitation_date)
+       VALUES (?, ?, ?, 'pending', NOW())`,
+      [thesisRow.id, professorId,req.user.id]
     );
 
     await conn.end();
