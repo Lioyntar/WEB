@@ -138,17 +138,41 @@ app.post("/api/login", async (req, res) => {
 
 // Get all thesis topics (professor view)
 app.get("/api/topics", authenticate, async (req, res) => {
-  const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Select topics, join with professor name, and left join with theses and students for assignment info
-  const [rows] = await conn.execute(
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+
+  const conn = await mysql.createConnection(dbConfig);
+
+  // 1. Assigned theses where professor is supervisor or committee member
+  const [assignedRows] = await conn.execute(
     `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path,
             th.student_id, s.student_number, s.name as student_name, th.status
+     FROM theses th
+     JOIN thesis_topics t ON th.topic_id = t.id
+     JOIN professors p ON t.professor_id = p.id
+     LEFT JOIN students s ON th.student_id = s.id
+     WHERE th.supervisor_id = ?
+        OR EXISTS (
+          SELECT 1 FROM committee_members cm
+          WHERE cm.thesis_id = th.id AND cm.professor_id = ?
+        )`,
+    [req.user.id, req.user.id]
+  );
+
+  // 2. Unassigned topics created by the professor (not in any thesis)
+  const [unassignedRows] = await conn.execute(
+    `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path,
+            NULL as student_id, NULL as student_number, NULL as student_name, NULL as status
      FROM thesis_topics t
      JOIN professors p ON t.professor_id = p.id
-     LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση')
-     LEFT JOIN students s ON th.student_id = s.id`
+     LEFT JOIN theses th ON th.topic_id = t.id
+     WHERE t.professor_id = ? AND th.id IS NULL`,
+    [req.user.id]
   );
-  // Return topics as JSON with assignment info
+
+  await conn.end();
+
+  // Combine and return
+  const rows = [...assignedRows, ...unassignedRows];
   res.json(rows.map(r => ({
     id: r.id,
     title: r.title,
