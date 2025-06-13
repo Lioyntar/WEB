@@ -383,8 +383,15 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
 
   await conn.end();
 
-  // Επιστρέφουμε και τις προσκλήσεις (pending) και τα μέλη επιτροπής (accepted/rejected)
-  // Για να εμφανίζονται όλα μαζί στη λίστα του φοιτητή
+  // Map statuses to Greek
+  function mapStatus(status) {
+    if (!status) return "Αναμένεται";
+    if (status === "pending") return "Αναμένεται";
+    if (status === "accepted") return "Αποδεκτή";
+    if (status === "rejected") return "Απορρίφθηκε";
+    return status;
+  }
+
   const all = [
     ...invRows.map(inv => ({
       id: inv.id,
@@ -392,7 +399,7 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
       professor_name: inv.professor_name,
       professor_surname: inv.professor_surname,
       professor_email: inv.professor_email,
-      status: inv.status // pending
+      status: mapStatus(inv.status)
     })),
     ...committeeRows.map(cm => ({
       id: `cm_${cm.professor_id}`,
@@ -400,7 +407,7 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
       professor_name: cm.professor_name,
       professor_surname: cm.professor_surname,
       professor_email: cm.professor_email,
-      status: cm.status // accepted/rejected
+      status: mapStatus(cm.status)
     }))
   ];
 
@@ -452,7 +459,7 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
 
     // Έλεγχος αν υπάρχουν ήδη 2 αποδεκτές προσκλήσεις
     const [accepted] = await conn.execute(
-      "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'accepted'",
+      "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'Αποδεκτή'",
       [thesisRow.id]
     );
     if (accepted[0].cnt >= 2) {
@@ -470,10 +477,10 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
       return res.status(400).json({ error: "Έχει ήδη σταλεί πρόσκληση σε αυτόν τον διδάσκοντα." });
     }
 
-    // Εισαγωγή πρόσκλησης με status = 'pending' by default
+    // Εισαγωγή πρόσκλησης με status = 'Αναμένεται' by default
     await conn.execute(
       `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_student_id, status, invitation_date)
-       VALUES (?, ?, ?, 'pending', NOW())`,
+       VALUES (?, ?, ?, 'Αναμένεται', NOW())`,
       [thesisRow.id, professorId,req.user.id]
     );
 
@@ -508,16 +515,16 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     [thesisId, req.user.id]
   );
   if (!alreadyMember.length) {
-    // Εξασφαλίζουμε ότι το πεδίο response είναι 'accepted'
+    // Εξασφαλίζουμε ότι το πεδίο response είναι 'Αποδεκτή'
     await conn.execute(
       `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-       VALUES (?, ?, 'accepted', NOW())`,
+       VALUES (?, ?, 'Αποδεκτή', NOW())`,
       [thesisId, req.user.id]
     );
   } else {
-    // Αν υπάρχει ήδη, κάνε update το response σε 'accepted'
+    // Αν υπάρχει ήδη, κάνε update το response σε 'Αποδεκτή'
     await conn.execute(
-      `UPDATE committee_members SET response = 'accepted', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
+      `UPDATE committee_members SET response = 'Αποδεκτή', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
       [thesisId, req.user.id]
     );
   }
@@ -528,9 +535,9 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     [invitationId]
   );
 
-  // Υπολόγισε πόσοι έχουν αποδεχθεί (response='accepted')
+  // Υπολόγισε πόσοι έχουν αποδεχθεί (response='Αποδεκτή')
   const [acceptedRows] = await conn.execute(
-    "SELECT COUNT(*) as cnt FROM committee_members WHERE thesis_id = ? AND response = 'accepted'",
+    "SELECT COUNT(*) as cnt FROM committee_members WHERE thesis_id = ? AND response = 'Αποδεκτή'",
     [thesisId]
   );
   const acceptedCount = acceptedRows[0].cnt;
@@ -568,7 +575,7 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   }
   const thesisId = invRows[0].thesis_id;
 
-  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'rejected' ΜΟΝΟ αν δεν υπάρχει ήδη
+  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'Απορρίφθηκε' ΜΟΝΟ αν δεν υπάρχει ήδη
   const [alreadyMember] = await conn.execute(
     "SELECT * FROM committee_members WHERE thesis_id = ? AND professor_id = ?",
     [thesisId, req.user.id]
@@ -576,13 +583,13 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   if (!alreadyMember.length) {
     await conn.execute(
       `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-       VALUES (?, ?, 'rejected', NOW())`,
+       VALUES (?, ?, 'Απορρίφθηκε', NOW())`,
       [thesisId, req.user.id]
     );
   } else {
-    // Αν υπάρχει ήδη, κάνε update το response σε 'rejected'
+    // Αν υπάρχει ήδη, κάνε update το response σε 'Απορρίφθηκε'
     await conn.execute(
-      `UPDATE committee_members SET response = 'rejected', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
+      `UPDATE committee_members SET response = 'Απορρίφθηκε', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
       [thesisId, req.user.id]
     );
   }
@@ -631,7 +638,18 @@ app.get("/api/invitations/received", authenticate, async (req, res) => {
     [req.user.id]
   );
   await conn.end();
-  res.json(rows);
+  // Map status to Greek
+  function mapStatus(status) {
+    if (!status) return "Αναμένεται";
+    if (status === "pending") return "Αναμένεται";
+    if (status === "accepted") return "Αποδεκτή";
+    if (status === "rejected") return "Απορρίφθηκε";
+    return status;
+  }
+  res.json(rows.map(r => ({
+    ...r,
+    status: mapStatus(r.status)
+  })));
 });
 
 // Start the server on port 5000

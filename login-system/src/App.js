@@ -223,14 +223,14 @@ function Teacher({ user, topics, setTopics }) {
                         <div>
                           <strong className="text-white">Κατάσταση:</strong> <span className="text-white">
                             {inv.status ? (
-                              inv.status.toLowerCase() === "pending" ? "Εκκρεμεί" :
-                              inv.status.toLowerCase() === "accepted" ? "Αποδεκτή" :
-                              inv.status.toLowerCase() === "rejected" ? "Απορριφθείσα" :
+                              inv.status === "Αναμένεται" ? "Αναμένεται" :
+                              inv.status === "Αποδεκτή" ? "Αποδεκτή" :
+                              inv.status === "Απορρίφθηκε" ? "Απορρίφθηκε" :
                               inv.status
-                            ) : "Εκκρεμεί"}
+                            ) : "Αναμένεται"}
                           </span>
                         </div>
-                        {(!inv.status || inv.status.toLowerCase() === "pending") && (
+                        {(!inv.status || inv.status === "Αναμένεται") && (
                           <div className="mt-2 space-x-2">
                             <button className="bg-green-500 text-white px-3 py-1 rounded" onClick={() => handleAccept(inv.id)}>Αποδοχή</button>
                             <button className="bg-red-500 text-white px-3 py-1 rounded" onClick={() => handleReject(inv.id)}>Απόρριψη</button>
@@ -973,7 +973,7 @@ function Student({ user, topics = [] }) {
                                 <li key={inv.id} className="border p-3 rounded">
                                     <span className="text-white">{inv.professor_name} ({inv.professor_email})</span> - 
                                     <span className="text-white ml-2">
-                                        {inv.status === "accepted" ? "Αποδέχθηκε" : inv.status === "pending" ? "Εκκρεμεί" : "Απορρίφθηκε"}
+                                        {inv.status === "Αποδεκτή" ? "Αποδέχθηκε" : inv.status === "Αναμένεται" ? "Εκκρεμεί" : "Απορρίφθηκε"}
                                     </span>
                                 </li>
                             ))}
