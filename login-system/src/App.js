@@ -978,9 +978,6 @@ function Student({ user, topics = [] }) {
                                 </li>
                             ))}
                         </ul>
-                        <div className="text-white mt-4">
-                            <span className="text-white">Αποδεκτοί: {acceptedCount} / 2</span>
-                        </div>
                         {acceptedCount >= 2 && (
                             <div className="text-white font-bold mt-2">Η εργασία έγινε ενεργή. Οι υπόλοιπες προσκλήσεις ακυρώθηκαν.</div>
                         )}
