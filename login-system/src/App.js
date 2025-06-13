@@ -734,7 +734,7 @@ function Student({ user, topics = [] }) {
   };
 
   // Υπολογισμός αποδεκτών προσκλήσεων
-  const acceptedCount = committeeInvitations.filter(inv => inv.status === "accepted").length;
+  const acceptedCount = committeeInvitations.filter(inv => inv.status === "Αποδεκτή").length;
 
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
