@@ -187,6 +187,32 @@ function Teacher({ user, topics, setTopics }) {
     }
   };
 
+  // State for thesis management modal
+  const [showManageTheses, setShowManageTheses] = useState(false);
+  const [manageThesesLoading, setManageThesesLoading] = useState(false);
+  const [manageTheses, setManageTheses] = useState([]);
+  const [manageThesesError, setManageThesesError] = useState("");
+
+  // Load theses under assignment for management
+  const handleShowManageTheses = async () => {
+    setShowManageTheses(true);
+    setManageThesesLoading(true);
+    setManageThesesError("");
+    try {
+      const res = await fetch("/api/teacher/theses-under-assignment", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setManageTheses(await res.json());
+      } else {
+        setManageThesesError("Αποτυχία φόρτωσης διπλωματικών.");
+      }
+    } catch {
+      setManageThesesError("Αποτυχία φόρτωσης διπλωματικών.");
+    }
+    setManageThesesLoading(false);
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
@@ -194,6 +220,7 @@ function Teacher({ user, topics, setTopics }) {
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/assign")}>Αρχική Ανάθεση Θέματος σε Φοιτητή</button>
       <button className="bg-green-600 text-white px-4 py-2 rounded w-full" onClick={handleShowInvitations}>Προβολή προσκλήσεων συμμετοχής σε τριμελή</button>
+      <button className="bg-purple-600 text-white px-4 py-2 rounded w-full" onClick={handleShowManageTheses}>Διαχείριση διπλωματικών εργασιών</button>
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
 
@@ -239,6 +266,73 @@ function Teacher({ user, topics, setTopics }) {
                       </li>
                     ))}
                   </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal for thesis management */}
+      {showManageTheses && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManageTheses(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Διαχείριση διπλωματικών υπό ανάθεση</h3>
+            {manageThesesLoading ? (
+              <div>Φόρτωση...</div>
+            ) : manageThesesError ? (
+              <div className="text-red-500">{manageThesesError}</div>
+            ) : (
+              <div>
+                {manageTheses.length === 0 ? (
+                  <div className="text-gray-500">Δεν υπάρχουν διπλωματικές υπό ανάθεση.</div>
+                ) : (
+                  manageTheses.map(thesis => (
+                    <div key={thesis.id} className="border p-4 mb-4 rounded bg-[#1f293a]">
+                      <div className="mb-2">
+                        <strong className="text-white">Θέμα:</strong> <span className="text-white">{thesis.title}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Φοιτητής:</strong> <span className="text-white">{thesis.student_name} {thesis.student_surname} ({thesis.student_number})</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{thesis.status}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Μέλη/Προσκλήσεις:</strong>
+                        {thesis.invitations.length === 0 ? (
+                          <span className="text-white ml-2">Δεν υπάρχουν προσκλήσεις.</span>
+                        ) : (
+                          <table
+                            className="w-full mt-2 text-white text-sm"
+                            style={{ color: "#fff", minWidth: 0, width: "100%" }}
+                          >
+                            <thead>
+                              <tr>
+                                <th className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "90px" }}>Όνομα</th>
+                                <th className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "110px" }}>Email</th>
+                                <th className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "70px" }}>Κατάσταση</th>
+                                <th className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "100px" }}>Ημ/νία Πρόσκλησης</th>
+                                <th className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "100px" }}>Ημ/νία Απάντησης</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {thesis.invitations.map(inv => (
+                                <tr key={inv.id}>
+                                  <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "90px" }}>{inv.professor_name} {inv.professor_surname}</td>
+                                  <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "110px" }}>{inv.professor_email}</td>
+                                  <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "70px" }}>{inv.status}</td>
+                                  <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "100px" }}>{inv.invitation_date ? new Date(inv.invitation_date).toLocaleString("el-GR") : "--"}</td>
+                                  <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "100px" }}>{inv.response_date ? new Date(inv.response_date).toLocaleString("el-GR") : "--"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             )}

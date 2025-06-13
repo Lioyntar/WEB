@@ -365,7 +365,7 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
 
   // Προσκλήσεις που είναι ακόμα ενεργές (pending)
   const [invRows] = await conn.execute(
-    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, i.status
+    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, i.status, i.invitation_date
      FROM invitations i
      JOIN professors p ON i.invited_professor_id = p.id
      WHERE i.thesis_id = ?`,
@@ -374,7 +374,7 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
 
   // Μέλη επιτροπής που έχουν αποδεχθεί (ή απορρίψει)
   const [committeeRows] = await conn.execute(
-    `SELECT cm.professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, cm.response as status
+    `SELECT cm.professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, cm.response as status, cm.invitation_date, cm.response_date
      FROM committee_members cm
      JOIN professors p ON cm.professor_id = p.id
      WHERE cm.thesis_id = ?`,
@@ -399,7 +399,9 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
       professor_name: inv.professor_name,
       professor_surname: inv.professor_surname,
       professor_email: inv.professor_email,
-      status: mapStatus(inv.status)
+      status: mapStatus(inv.status),
+      invitation_date: inv.invitation_date || null,
+      response_date: null
     })),
     ...committeeRows.map(cm => ({
       id: `cm_${cm.professor_id}`,
@@ -407,7 +409,9 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
       professor_name: cm.professor_name,
       professor_surname: cm.professor_surname,
       professor_email: cm.professor_email,
-      status: mapStatus(cm.status)
+      status: mapStatus(cm.status),
+      invitation_date: cm.invitation_date || null,
+      response_date: cm.response_date || null
     }))
   ];
 
@@ -498,9 +502,9 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
   const invitationId = req.params.invitationId;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Βρες την πρόσκληση και το thesis_id
+  // Βρες την πρόσκληση και το thesis_id ΚΑΙ invitation_date
   const [invRows] = await conn.execute(
-    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ?",
+    "SELECT thesis_id, invitation_date FROM invitations WHERE id = ? AND invited_professor_id = ?",
     [invitationId, req.user.id]
   );
   if (!invRows.length) {
@@ -508,6 +512,7 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     return res.status(404).json({ error: "Invitation not found" });
   }
   const thesisId = invRows[0].thesis_id;
+  const invitationDate = invRows[0].invitation_date;
 
   // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής (committee_members) ΜΟΝΟ αν δεν υπάρχει ήδη
   const [alreadyMember] = await conn.execute(
@@ -515,17 +520,16 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     [thesisId, req.user.id]
   );
   if (!alreadyMember.length) {
-    // Εξασφαλίζουμε ότι το πεδίο response είναι 'Αποδεκτή'
     await conn.execute(
-      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-       VALUES (?, ?, 'Αποδεκτή', NOW())`,
-      [thesisId, req.user.id]
+      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date, invitation_date)
+       VALUES (?, ?, 'Αποδεκτή', NOW(), ? )`,
+      [thesisId, req.user.id, invitationDate]
     );
   } else {
-    // Αν υπάρχει ήδη, κάνε update το response σε 'Αποδεκτή'
+    // Αν υπάρχει ήδη, ενημέρωσε invitation_date ΜΟΝΟ αν είναι NULL
     await conn.execute(
-      `UPDATE committee_members SET response = 'Αποδεκτή', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
-      [thesisId, req.user.id]
+      `UPDATE committee_members SET response = 'Αποδεκτή', response_date = NOW(), invitation_date = IFNULL(invitation_date, ?) WHERE thesis_id = ? AND professor_id = ?`,
+      [invitationDate, thesisId, req.user.id]
     );
   }
 
@@ -564,9 +568,9 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   const invitationId = req.params.invitationId;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Βρες την πρόσκληση και το thesis_id
+  // Βρες την πρόσκληση και το thesis_id ΚΑΙ invitation_date
   const [invRows] = await conn.execute(
-    "SELECT thesis_id FROM invitations WHERE id = ? AND invited_professor_id = ?",
+    "SELECT thesis_id, invitation_date FROM invitations WHERE id = ? AND invited_professor_id = ?",
     [invitationId, req.user.id]
   );
   if (!invRows.length) {
@@ -574,6 +578,7 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
     return res.status(404).json({ error: "Invitation not found" });
   }
   const thesisId = invRows[0].thesis_id;
+  const invitationDate = invRows[0].invitation_date;
 
   // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'Απορρίφθηκε' ΜΟΝΟ αν δεν υπάρχει ήδη
   const [alreadyMember] = await conn.execute(
@@ -582,15 +587,15 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   );
   if (!alreadyMember.length) {
     await conn.execute(
-      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-       VALUES (?, ?, 'Απορρίφθηκε', NOW())`,
-      [thesisId, req.user.id]
+      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date, invitation_date)
+       VALUES (?, ?, 'Απορρίφθηκε', NOW(), ? )`,
+      [thesisId, req.user.id, invitationDate]
     );
   } else {
-    // Αν υπάρχει ήδη, κάνε update το response σε 'Απορρίφθηκε'
+    // Αν υπάρχει ήδη, ενημέρωσε invitation_date ΠΑΝΤΑ (όχι μόνο αν είναι NULL)
     await conn.execute(
-      `UPDATE committee_members SET response = 'Απορρίφθηκε', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
-      [thesisId, req.user.id]
+      `UPDATE committee_members SET response = 'Απορρίφθηκε', response_date = NOW(), invitation_date = ? WHERE thesis_id = ? AND professor_id = ?`,
+      [invitationDate, thesisId, req.user.id]
     );
   }
 
@@ -650,6 +655,78 @@ app.get("/api/invitations/received", authenticate, async (req, res) => {
     ...r,
     status: mapStatus(r.status)
   })));
+});
+
+// Get all theses under assignment for a professor, with invitations/members info
+app.get("/api/teacher/theses-under-assignment", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Βρες όλες τις διπλωματικές υπό ανάθεση όπου ο καθηγητής είναι επιβλέπων
+  const [theses] = await conn.execute(
+    `SELECT th.id, th.status, th.topic_id, th.student_id, th.created_at,
+            s.name as student_name, s.surname as student_surname, s.student_number,
+            t.title
+     FROM theses th
+     JOIN students s ON th.student_id = s.id
+     JOIN thesis_topics t ON th.topic_id = t.id
+     WHERE th.supervisor_id = ? AND th.status = 'υπό ανάθεση'
+     ORDER BY th.id DESC`,
+    [req.user.id]
+  );
+
+  // Για κάθε διπλωματική, φέρε τα invitations και τα μέλη επιτροπής
+  const results = [];
+  for (const thesis of theses) {
+    // Invitations (pending)
+    const [invRows] = await conn.execute(
+      `SELECT i.id, i.status, i.invitation_date, NULL as response_date,
+              p.name as professor_name, p.surname as professor_surname, p.email as professor_email
+       FROM invitations i
+       JOIN professors p ON i.invited_professor_id = p.id
+       WHERE i.thesis_id = ?`,
+      [thesis.id]
+    );
+    // Committee members (accepted/rejected)
+    const [cmRows] = await conn.execute(
+      `SELECT CONCAT('cm_', cm.professor_id) as id, cm.response as status, NULL as invitation_date, cm.response_date,
+              p.name as professor_name, p.surname as professor_surname, p.email as professor_email
+       FROM committee_members cm
+       JOIN professors p ON cm.professor_id = p.id
+       WHERE cm.thesis_id = ?`,
+      [thesis.id]
+    );
+    // Map statuses to Greek
+    function mapStatus(status) {
+      if (!status) return "Αναμένεται";
+      if (status === "pending" || status === "Αναμένεται") return "Αναμένεται";
+      if (status === "accepted" || status === "Αποδεκτή") return "Αποδεκτή";
+      if (status === "rejected" || status === "Απορρίφθηκε") return "Απορρίφθηκε";
+      return status;
+    }
+    const invitations = [
+      ...invRows.map(inv => ({
+        ...inv,
+        status: mapStatus(inv.status)
+      })),
+      ...cmRows.map(cm => ({
+        ...cm,
+        status: mapStatus(cm.status)
+      }))
+    ];
+    results.push({
+      id: thesis.id,
+      title: thesis.title,
+      status: thesis.status,
+      student_name: thesis.student_name,
+      student_surname: thesis.student_surname,
+      student_number: thesis.student_number,
+      invitations
+    });
+  }
+
+  await conn.end();
+  res.json(results);
 });
 
 // Start the server on port 5000
