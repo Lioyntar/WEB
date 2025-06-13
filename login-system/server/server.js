@@ -358,19 +358,53 @@ app.get("/api/professors", authenticate, async (req, res) => {
   res.json(rows);
 });
 
-// Επιστροφή προσκλήσεων για διπλωματική
+// Επιστροφή προσκλήσεων για διπλωματική (και αποδεκτών μελών)
 app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
   const thesisId = req.params.thesisId;
   const conn = await mysql.createConnection(dbConfig);
-  const [rows] = await conn.execute(
-    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.email as professor_email, i.status
+
+  // Προσκλήσεις που είναι ακόμα ενεργές (pending)
+  const [invRows] = await conn.execute(
+    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, i.status
      FROM invitations i
      JOIN professors p ON i.invited_professor_id = p.id
      WHERE i.thesis_id = ?`,
     [thesisId]
   );
+
+  // Μέλη επιτροπής που έχουν αποδεχθεί (ή απορρίψει)
+  const [committeeRows] = await conn.execute(
+    `SELECT cm.professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, cm.response as status
+     FROM committee_members cm
+     JOIN professors p ON cm.professor_id = p.id
+     WHERE cm.thesis_id = ?`,
+    [thesisId]
+  );
+
   await conn.end();
-  res.json(rows);
+
+  // Επιστρέφουμε και τις προσκλήσεις (pending) και τα μέλη επιτροπής (accepted/rejected)
+  // Για να εμφανίζονται όλα μαζί στη λίστα του φοιτητή
+  const all = [
+    ...invRows.map(inv => ({
+      id: inv.id,
+      professor_id: inv.professor_id,
+      professor_name: inv.professor_name,
+      professor_surname: inv.professor_surname,
+      professor_email: inv.professor_email,
+      status: inv.status // pending
+    })),
+    ...committeeRows.map(cm => ({
+      id: `cm_${cm.professor_id}`,
+      professor_id: cm.professor_id,
+      professor_name: cm.professor_name,
+      professor_surname: cm.professor_surname,
+      professor_email: cm.professor_email,
+      status: cm.status // accepted/rejected
+    }))
+  ];
+
+  res.json(all);
 });
 
 // Αποστολή πρόσκλησης σε διδάσκοντα
@@ -468,12 +502,25 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
   }
   const thesisId = invRows[0].thesis_id;
 
-  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής (committee_members)
-  await conn.execute(
-    `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-     VALUES (?, ?, 'accepted', NOW())`,
+  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής (committee_members) ΜΟΝΟ αν δεν υπάρχει ήδη
+  const [alreadyMember] = await conn.execute(
+    "SELECT * FROM committee_members WHERE thesis_id = ? AND professor_id = ?",
     [thesisId, req.user.id]
   );
+  if (!alreadyMember.length) {
+    // Εξασφαλίζουμε ότι το πεδίο response είναι 'accepted'
+    await conn.execute(
+      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
+       VALUES (?, ?, 'accepted', NOW())`,
+      [thesisId, req.user.id]
+    );
+  } else {
+    // Αν υπάρχει ήδη, κάνε update το response σε 'accepted'
+    await conn.execute(
+      `UPDATE committee_members SET response = 'accepted', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
+      [thesisId, req.user.id]
+    );
+  }
 
   // Διέγραψε την πρόσκληση
   await conn.execute(
@@ -481,8 +528,27 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
     [invitationId]
   );
 
+  // Υπολόγισε πόσοι έχουν αποδεχθεί (response='accepted')
+  const [acceptedRows] = await conn.execute(
+    "SELECT COUNT(*) as cnt FROM committee_members WHERE thesis_id = ? AND response = 'accepted'",
+    [thesisId]
+  );
+  const acceptedCount = acceptedRows[0].cnt;
+
+  // Αν είναι 2 ή περισσότεροι, κάνε τη διπλωματική ενεργή και ακύρωσε τις υπόλοιπες προσκλήσεις
+  if (acceptedCount >= 2) {
+    await conn.execute(
+      "UPDATE theses SET status = 'ενεργή' WHERE id = ?",
+      [thesisId]
+    );
+    await conn.execute(
+      "DELETE FROM invitations WHERE thesis_id = ?",
+      [thesisId]
+    );
+  }
+
   await conn.end();
-  res.json({ success: true });
+  res.json({ success: true, thesisActivated: acceptedCount >= 2 });
 });
 
 // Διδάσκων απορρίπτει πρόσκληση για τριμελή
@@ -502,12 +568,24 @@ app.post("/api/invitations/:invitationId/reject", authenticate, async (req, res)
   }
   const thesisId = invRows[0].thesis_id;
 
-  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'rejected'
-  await conn.execute(
-    `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
-     VALUES (?, ?, 'rejected', NOW())`,
+  // Πρόσθεσε τον καθηγητή ως μέλος επιτροπής με response 'rejected' ΜΟΝΟ αν δεν υπάρχει ήδη
+  const [alreadyMember] = await conn.execute(
+    "SELECT * FROM committee_members WHERE thesis_id = ? AND professor_id = ?",
     [thesisId, req.user.id]
   );
+  if (!alreadyMember.length) {
+    await conn.execute(
+      `INSERT INTO committee_members (thesis_id, professor_id, response, response_date)
+       VALUES (?, ?, 'rejected', NOW())`,
+      [thesisId, req.user.id]
+    );
+  } else {
+    // Αν υπάρχει ήδη, κάνε update το response σε 'rejected'
+    await conn.execute(
+      `UPDATE committee_members SET response = 'rejected', response_date = NOW() WHERE thesis_id = ? AND professor_id = ?`,
+      [thesisId, req.user.id]
+    );
+  }
 
   // Διέγραψε την πρόσκληση
   await conn.execute(
