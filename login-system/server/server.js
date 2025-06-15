@@ -226,7 +226,7 @@ app.post("/api/topics/:id/unassign", authenticate, async (req, res) => {
 
  // 1. Βρες το thesis.id για να ξέρεις σε ποια διπλωματική θα κάνεις cascade delete
  const [thesisRows] = await conn.execute(
-   "SELECT id FROM theses WHERE topic_id = ? AND supervisor_id = ?",
+   "SELECT id FROM theses WHERE topic_id = ? AND supervisor_id = ? AND status= 'υπό ανάθεση'",
    [id, req.user.id]
  );
  if(thesisRows.length) {
