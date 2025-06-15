@@ -688,14 +688,20 @@ app.get("/api/teacher/theses-under-assignment", authenticate, async (req, res) =
       [thesis.id]
     );
     // Committee members (accepted/rejected)
-    const [cmRows] = await conn.execute(
-      `SELECT CONCAT('cm_', cm.professor_id) as id, cm.response as status, NULL as invitation_date, cm.response_date,
-              p.name as professor_name, p.surname as professor_surname, p.email as professor_email
-       FROM committee_members cm
-       JOIN professors p ON cm.professor_id = p.id
-       WHERE cm.thesis_id = ?`,
-      [thesis.id]
-    );
+     const [cmRows] = await conn.execute(
+  `SELECT 
+     CONCAT('cm_', cm.professor_id) as id,
+     cm.response as status,
+     cm.invitation_date,       
+     cm.response_date,
+     p.name as professor_name,
+     p.surname as professor_surname,
+     p.email as professor_email
+   FROM committee_members cm
+   JOIN professors p ON cm.professor_id = p.id
+   WHERE cm.thesis_id = ?`,
+  [thesis.id]
+);
     // Map statuses to Greek
     function mapStatus(status) {
       if (!status) return "Αναμένεται";
