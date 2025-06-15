@@ -221,16 +221,40 @@ app.post("/api/topics/:id/assign", authenticate, async (req, res) => {
 
 // Unassign a topic from a student (professor only)
 app.post("/api/topics/:id/unassign", authenticate, async (req, res) => {
-  const { id } = req.params; // Get topic id from URL
-  const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Delete assignment from theses table
-  await conn.execute(
-    "DELETE FROM theses WHERE topic_id = ? AND supervisor_id = ?",
-    [id, req.user.id]
-  );
+  const { id } = req.params; // topic id
+  const conn = await mysql.createConnection(dbConfig);
+
+ // 1. Βρες το thesis.id για να ξέρεις σε ποια διπλωματική θα κάνεις cascade delete
+ const [thesisRows] = await conn.execute(
+   "SELECT id FROM theses WHERE topic_id = ? AND supervisor_id = ?",
+   [id, req.user.id]
+ );
+ if(thesisRows.length) {
+   const thesisId = thesisRows[0].id;
+
+   // 2. Διέγραψε όλες τις προσκλήσεις για αυτή τη διπλωματική
+   await conn.execute(
+     "DELETE FROM invitations WHERE thesis_id = ?",
+     [thesisId]
+   );
+
+   // 3. Διέγραψε όλα τα μέλη επιτροπής (αποδεκτά ή μη)
+   await conn.execute(
+     "DELETE FROM committee_members WHERE thesis_id = ?",
+     [thesisId]
+   );
+
+   // 4. Τώρα διέγραψε την ίδια την ανάθεση
+   await conn.execute(
+     "DELETE FROM theses WHERE id = ?",
+     [thesisId]
+   );
+ }
+
   // Return success
   res.json({ success: true });
 });
+
 
 // Endpoint για λεπτομέρειες διπλωματικής (student view)
 app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
