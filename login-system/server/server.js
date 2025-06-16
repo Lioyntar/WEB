@@ -759,5 +759,67 @@ app.get("/api/teacher/theses-under-assignment", authenticate, async (req, res) =
   res.json(results);
 });
 
+// Get all active (ενεργή) theses for a professor (for notes)
+app.get("/api/teacher/active-theses", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT th.id, th.status, th.topic_id, th.student_id, th.created_at,
+            s.name as student_name, s.surname as student_surname, s.student_number,
+            t.title
+     FROM theses th
+     JOIN students s ON th.student_id = s.id
+     JOIN thesis_topics t ON th.topic_id = t.id
+     WHERE th.supervisor_id = ? AND th.status = 'ενεργή'
+     ORDER BY th.id DESC`,
+    [req.user.id]
+  );
+  await conn.end();
+  res.json(rows);
+});
+
+// Get notes for a thesis (only for the professor who created them)
+app.get("/api/notes/:thesisId", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  const [rows] = await conn.execute(
+    `SELECT id, content, created_at
+     FROM notes
+     WHERE thesis_id = ? AND professor_id = ?
+     ORDER BY created_at DESC`,
+    [thesisId, req.user.id]
+  );
+  await conn.end();
+  res.json(rows);
+});
+
+// Add a note for a thesis (only for the professor who owns it)
+app.post("/api/notes/:thesisId", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const thesisId = req.params.thesisId;
+  const { content } = req.body;
+  if (!content || typeof content !== "string" || content.length > 300) {
+    return res.status(400).json({ error: "Το περιεχόμενο της σημείωσης είναι υποχρεωτικό και μέχρι 300 χαρακτήρες." });
+  }
+  const conn = await mysql.createConnection(dbConfig);
+  await conn.execute(
+    `INSERT INTO notes (thesis_id, professor_id, content, created_at)
+     VALUES (?, ?, ?, NOW())`,
+    [thesisId, req.user.id, content]
+  );
+  // Return the new note
+  const [rows] = await conn.execute(
+    `SELECT id, content, created_at
+     FROM notes
+     WHERE thesis_id = ? AND professor_id = ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [thesisId, req.user.id]
+  );
+  await conn.end();
+  res.json(rows[0]);
+});
+
 // Start the server on port 5000
 app.listen(5000, () => console.log("Backend running on port 5000"));

@@ -213,6 +213,94 @@ function Teacher({ user, topics, setTopics }) {
     setManageThesesLoading(false);
   };
 
+  // --- Notes Modal State ---
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [activeTheses, setActiveTheses] = useState([]);
+  const [selectedThesisId, setSelectedThesisId] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState("");
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesError, setNotesError] = useState("");
+
+  // Load active theses (status = 'ενεργή') for this professor
+  const handleShowNotesModal = async () => {
+    setShowNotesModal(true);
+    setNotesError("");
+    setNotes([]);
+    setSelectedThesisId(null);
+    setNewNote("");
+    setNotesLoading(true);
+    try {
+      const res = await fetch("/api/teacher/active-theses", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setActiveTheses(await res.json());
+      } else {
+        setActiveTheses([]);
+        setNotesError("Αποτυχία φόρτωσης ενεργών διπλωματικών.");
+      }
+    } catch {
+      setActiveTheses([]);
+      setNotesError("Αποτυχία φόρτωσης ενεργών διπλωματικών.");
+    }
+    setNotesLoading(false);
+  };
+
+  // Load notes for selected thesis
+  const handleSelectThesis = async (thesisId) => {
+    setSelectedThesisId(thesisId);
+    setNotes([]);
+    setNotesError("");
+    setNotesLoading(true);
+    try {
+      const res = await fetch(`/api/notes/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setNotes(await res.json());
+      } else {
+        setNotes([]);
+        setNotesError("Αποτυχία φόρτωσης σημειώσεων.");
+      }
+    } catch {
+      setNotes([]);
+      setNotesError("Αποτυχία φόρτωσης σημειώσεων.");
+    }
+    setNotesLoading(false);
+  };
+
+  // Add a new note
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    if (newNote.length > 300) {
+      setNotesError("Το μέγιστο μήκος σημείωσης είναι 300 χαρακτήρες.");
+      return;
+    }
+    setNotesError("");
+    setNotesLoading(true);
+    try {
+      const res = await fetch(`/api/notes/${selectedThesisId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ content: newNote })
+      });
+      if (res.ok) {
+        const note = await res.json();
+        setNotes([note, ...notes]);
+        setNewNote("");
+      } else {
+        setNotesError("Αποτυχία αποθήκευσης σημείωσης.");
+      }
+    } catch {
+      setNotesError("Αποτυχία αποθήκευσης σημείωσης.");
+    }
+    setNotesLoading(false);
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
@@ -221,6 +309,9 @@ function Teacher({ user, topics, setTopics }) {
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/assign")}>Αρχική Ανάθεση Θέματος σε Φοιτητή</button>
       <button className="bg-green-600 text-white px-4 py-2 rounded w-full" onClick={handleShowInvitations}>Προβολή προσκλήσεων συμμετοχής σε τριμελή</button>
       <button className="bg-purple-600 text-white px-4 py-2 rounded w-full" onClick={handleShowManageTheses}>Διαχείριση διπλωματικών εργασιών</button>
+      <button className="bg-yellow-500 text-white px-4 py-2 rounded w-full" onClick={handleShowNotesModal}>
+        Σημειώσεις διπλωματικών
+      </button>
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
 
@@ -335,6 +426,78 @@ function Teacher({ user, topics, setTopics }) {
                   ))
                 )}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {showNotesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowNotesModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Σημειώσεις διπλωματικών</h3>
+            {notesLoading && <div>Φόρτωση...</div>}
+            {notesError && <div className="text-red-500">{notesError}</div>}
+            {!notesLoading && (
+              <>
+                <div className="mb-4">
+                  <label
+                    className="block mb-2 font-semibold"
+                    style={{ fontWeight: "bold", fontSize: "1em", marginLeft: 4 }}
+                  >
+                    Επιλέξτε διπλωματική:
+                  </label>
+                  <div className="input-box">
+                    <select
+                      value={selectedThesisId || ""}
+                      onChange={e => handleSelectThesis(e.target.value)}
+                    >
+                      <option value="">-- Επιλογή --</option>
+                      {activeTheses.map(th => (
+                        <option key={th.id} value={th.id}>
+                          {th.title} - {th.student_name} {th.student_surname} ({th.student_number})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {selectedThesisId && (
+                  <div>
+                    <label style={{ fontWeight: "bold", fontSize: "1em", marginLeft: 4 }}>Νέα σημείωση</label>
+                    <div className="mb-2 input-box">
+                      <textarea
+                        required
+                        maxLength={300}
+                        rows={5}
+                        placeholder="Γράψτε νέα σημείωση (μέχρι 300 χαρακτήρες)"
+                        value={newNote}
+                        onChange={e => setNewNote(e.target.value)}
+                      />
+                      <div className="text-right text-xs" style={{ color: "#fff" }}>{newNote.length}/300</div>
+                      <button
+                        className="bg-blue-600 text-white px-3 py-1 mt-2 rounded"
+                        onClick={handleAddNote}
+                        disabled={notesLoading || !newNote.trim()}
+                      >
+                        Αποθήκευση σημείωσης
+                      </button>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold mb-2">Οι σημειώσεις μου:</h4>
+                      {notes.length === 0 && <div className="text-gray-500">Δεν υπάρχουν σημειώσεις.</div>}
+                      <ul className="space-y-2 max-h-48 overflow-y-auto">
+                        {notes.map(note => (
+                          <li key={note.id} className="border p-2 rounded bg-gray-100">
+                            <div className="text-sm" style={{ color: "#fff" }}>{note.content}</div>
+                            <div className="text-xs text-right" style={{ color: "#fff" }}>{new Date(note.created_at).toLocaleString("el-GR")}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
