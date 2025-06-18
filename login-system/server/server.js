@@ -572,8 +572,9 @@ app.post("/api/invitations/:invitationId/accept", authenticate, async (req, res)
 
   // Αν είναι 2 ή περισσότεροι, κάνε τη διπλωματική ενεργή και ακύρωσε τις υπόλοιπες προσκλήσεις
   if (acceptedCount >= 2) {
+    // Ενημέρωσε official_assignment_date ΜΟΝΟ αν είναι NULL
     await conn.execute(
-      "UPDATE theses SET status = 'ενεργή' WHERE id = ?",
+      "UPDATE theses SET status = 'ενεργή', official_assignment_date = IFNULL(official_assignment_date, NOW()) WHERE id = ?",
       [thesisId]
     );
     await conn.execute(
@@ -823,3 +824,53 @@ app.post("/api/notes/:thesisId", authenticate, async (req, res) => {
 
 // Start the server on port 5000
 app.listen(5000, () => console.log("Backend running on port 5000"));
+
+// Ακύρωση διπλωματικής από επιβλέποντα (μόνο αν έχουν περάσει 2 έτη από official_assignment_date)
+app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const thesisId = req.params.id;
+  const { cancel_gs_number, cancel_gs_year } = req.body;
+  if (!cancel_gs_number || !cancel_gs_year) {
+    return res.status(400).json({ error: "Απαιτείται αριθμός και έτος ΓΣ." });
+  }
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Βρες τη διπλωματική και έλεγξε αν ο χρήστης είναι επιβλέπων
+  const [rows] = await conn.execute(
+    "SELECT id, supervisor_id, official_assignment_date, status FROM theses WHERE id = ?",
+    [thesisId]
+  );
+  if (!rows.length) {
+    await conn.end();
+    return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
+  }
+  const thesis = rows[0];
+  if (thesis.supervisor_id !== req.user.id) {
+    await conn.end();
+    return res.status(403).json({ error: "Δεν είστε επιβλέπων αυτής της διπλωματικής." });
+  }
+  if (!thesis.official_assignment_date) {
+    await conn.end();
+    return res.status(400).json({ error: "Δεν έχει οριστεί ημερομηνία οριστικής ανάθεσης." });
+  }
+  // Έλεγχος αν έχουν περάσει 2 έτη
+  const assignmentDate = new Date(thesis.official_assignment_date);
+  const now = new Date();
+  const diffYears = (now - assignmentDate) / (1000 * 60 * 60 * 24 * 365.25);
+  if (diffYears < 2) {
+    await conn.end();
+    return res.status(400).json({ error: "Δεν έχουν παρέλθει 2 έτη από την οριστική ανάθεση." });
+  }
+  // Ακύρωση
+  await conn.execute(
+    `UPDATE theses 
+     SET status = 'ακυρωμένη', 
+         cancellation_reason = 'από Διδάσκοντα',
+         cancel_gs_number = ?,
+         cancel_gs_year = ?
+     WHERE id = ?`,
+    [cancel_gs_number, cancel_gs_year, thesisId]
+  );
+  await conn.end();
+  res.json({ success: true });
+});

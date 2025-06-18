@@ -192,6 +192,8 @@ function Teacher({ user, topics, setTopics }) {
   const [manageThesesLoading, setManageThesesLoading] = useState(false);
   const [manageTheses, setManageTheses] = useState([]);
   const [manageThesesError, setManageThesesError] = useState("");
+  // --- Add state for cancel modal ---
+  const [cancelModal, setCancelModal] = useState({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false });
 
   // Load theses under assignment for management
   const handleShowManageTheses = async () => {
@@ -301,6 +303,54 @@ function Teacher({ user, topics, setTopics }) {
     setNotesLoading(false);
   };
 
+  // Helper: check if 2 years have passed since official_assignment_date
+  function canCancelThesis(thesis) {
+    if (!thesis.official_assignment_date || thesis.status !== "ενεργή") return false;
+    const assignmentDate = new Date(thesis.official_assignment_date);
+    const now = new Date();
+    const diffYears = (now - assignmentDate) / (1000 * 60 * 60 * 24 * 365.25);
+    return diffYears >= 2;
+  }
+
+  // Cancel thesis handler
+  const handleCancelThesis = async () => {
+    if (!cancelModal.gsNumber || !cancelModal.gsYear) {
+      setCancelModal(modal => ({ ...modal, error: "Συμπληρώστε αριθμό και έτος ΓΣ." }));
+      return;
+    }
+    setCancelModal(modal => ({ ...modal, loading: true, error: "" }));
+    try {
+      const res = await fetch(`/api/theses/${cancelModal.thesis.id}/cancel-by-supervisor`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({
+          cancel_gs_number: cancelModal.gsNumber,
+          cancel_gs_year: cancelModal.gsYear
+        })
+      });
+      if (res.ok) {
+        // Update the thesis in manageTheses
+        setManageTheses(theses =>
+          theses.map(t =>
+            t.id === cancelModal.thesis.id
+              ? { ...t, status: "ακυρωμένη", cancellation_reason: "από Διδάσκοντα", cancel_gs_number: cancelModal.gsNumber, cancel_gs_year: cancelModal.gsYear }
+              : t
+          )
+        );
+        setCancelModal({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setCancelModal(modal => ({ ...modal, error: err.error || "Αποτυχία ακύρωσης." }));
+      }
+    } catch {
+      setCancelModal(modal => ({ ...modal, error: "Αποτυχία ακύρωσης." }));
+    }
+    setCancelModal(modal => ({ ...modal, loading: false }));
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
@@ -389,7 +439,42 @@ function Teacher({ user, topics, setTopics }) {
                       </div>
                       <div className="mb-2">
                         <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{thesis.status}</span>
+                        {/* Show cancellation info if cancelled */}
+                        {thesis.status === "ακυρωμένη" && (
+                          <div className="text-red-400 text-sm mt-1">
+                            Ακυρώθηκε ({thesis.cancellation_reason || "από Διδάσκοντα"})
+                            {thesis.cancel_gs_number && thesis.cancel_gs_year && (
+                              <> - ΓΣ: {thesis.cancel_gs_number}/{thesis.cancel_gs_year}</>
+                            )}
+                          </div>
+                        )}
                       </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Ημ/νία Οριστικής Ανάθεσης:</strong>{" "}
+                        <span className="text-white">
+                          {thesis.official_assignment_date
+                            ? new Date(thesis.official_assignment_date).toLocaleDateString("el-GR")
+                            : "--"}
+                        </span>
+                      </div>
+                      {/* Cancel button if allowed */}
+                      {canCancelThesis(thesis) && (
+                        <button
+                          className="bg-red-600 text-white px-3 py-1 rounded mt-2"
+                          onClick={() =>
+                            setCancelModal({
+                              open: true,
+                              thesis,
+                              gsNumber: "",
+                              gsYear: "",
+                              error: "",
+                              loading: false
+                            })
+                          }
+                        >
+                          Ακύρωση διπλωματικής (μόνο αν έχει παρέλθει 2ετία)
+                        </button>
+                      )}
                       <div className="mb-2">
                         <strong className="text-white">Μέλη/Προσκλήσεις:</strong>
                         {thesis.invitations.length === 0 ? (
@@ -428,6 +513,40 @@ function Teacher({ user, topics, setTopics }) {
               </div>
             )}
           </div>
+          {/* Cancel modal */}
+          {cancelModal.open && (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
+              <div className="bg-white rounded shadow-lg p-6 max-w-sm w-full relative">
+                <button className="absolute top-2 right-2 text-gray-500" onClick={() => setCancelModal({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false })}>&times;</button>
+                <h4 className="text-lg font-bold mb-2">Ακύρωση διπλωματικής</h4>
+                <div className="mb-2">Συμπληρώστε αριθμό και έτος ΓΣ:</div>
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    placeholder="Αριθμός ΓΣ"
+                    value={cancelModal.gsNumber}
+                    onChange={e => setCancelModal(modal => ({ ...modal, gsNumber: e.target.value }))}
+                    className="border px-2 py-1 mr-2"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Έτος ΓΣ"
+                    value={cancelModal.gsYear}
+                    onChange={e => setCancelModal(modal => ({ ...modal, gsYear: e.target.value }))}
+                    className="border px-2 py-1"
+                  />
+                </div>
+                {cancelModal.error && <div className="text-red-500 mb-2">{cancelModal.error}</div>}
+                <button
+                  className="bg-red-600 text-white px-4 py-2 rounded"
+                  onClick={handleCancelThesis}
+                  disabled={cancelModal.loading}
+                >
+                  Επιβεβαίωση Ακύρωσης
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
