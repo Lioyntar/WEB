@@ -194,23 +194,50 @@ function Teacher({ user, topics, setTopics }) {
   const [manageThesesError, setManageThesesError] = useState("");
   // --- Add state for cancel modal ---
   const [cancelModal, setCancelModal] = useState({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false });
+  // --- Add state for active theses ---
+  const [activeManageTheses, setActiveManageTheses] = useState([]);
 
-  // Load theses under assignment for management
+  // Load theses under assignment for management (and active ones)
   const handleShowManageTheses = async () => {
     setShowManageTheses(true);
     setManageThesesLoading(true);
     setManageThesesError("");
+    setManageTheses([]);
+    setActiveManageTheses([]);
     try {
-      const res = await fetch("/api/teacher/theses-under-assignment", {
-        headers: { Authorization: `Bearer ${user.token}` }
-      });
-      if (res.ok) {
-        setManageTheses(await res.json());
+      // Fetch both in parallel
+      const [resUnder, resActive] = await Promise.all([
+        fetch("/api/teacher/theses-under-assignment", {
+          headers: { Authorization: `Bearer ${user.token}` }
+        }),
+        fetch("/api/teacher/active-theses", {
+          headers: { Authorization: `Bearer ${user.token}` }
+        })
+      ]);
+      let ok = true;
+      if (resUnder.ok) {
+        setManageTheses(await resUnder.json());
       } else {
-        setManageThesesError("Αποτυχία φόρτωσης διπλωματικών.");
+        setManageThesesError("Αποτυχία φόρτωσης διπλωματικών υπό ανάθεση.");
+        ok = false;
+      }
+      if (resActive.ok) {
+        setActiveManageTheses(await resActive.json());
+      } else {
+        setManageThesesError(prev => prev ? prev + "\n" + "Αποτυχία φόρτωσης ενεργών διπλωματικών." : "Αποτυχία φόρτωσης ενεργών διπλωματικών.");
+        ok = false;
+      }
+      if (!ok) {
+        // Αν και τα δύο απέτυχαν, καθάρισε τα states
+        if (!resUnder.ok && !resActive.ok) {
+          setManageTheses([]);
+          setActiveManageTheses([]);
+        }
       }
     } catch {
       setManageThesesError("Αποτυχία φόρτωσης διπλωματικών.");
+      setManageTheses([]);
+      setActiveManageTheses([]);
     }
     setManageThesesLoading(false);
   };
@@ -305,10 +332,15 @@ function Teacher({ user, topics, setTopics }) {
 
   // Helper: check if 2 years have passed since official_assignment_date
   function canCancelThesis(thesis) {
-    if (!thesis.official_assignment_date || thesis.status !== "ενεργή") return false;
+    if (!thesis.official_assignment_date || (thesis.status || '').trim().toLowerCase() !== "ενεργή") return false;
+    // Parse as local date only (ignore time)
     const assignmentDate = new Date(thesis.official_assignment_date);
     const now = new Date();
-    const diffYears = (now - assignmentDate) / (1000 * 60 * 60 * 24 * 365.25);
+    // Normalize both dates to YYYY-MM-DD (ignore time)
+    const assignmentDateOnly = new Date(assignmentDate.getFullYear(), assignmentDate.getMonth(), assignmentDate.getDate());
+    const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = nowDateOnly - assignmentDateOnly;
+    const diffYears = diff / (1000 * 60 * 60 * 24 * 365.25);
     return diffYears >= 2;
   }
 
@@ -426,6 +458,8 @@ function Teacher({ user, topics, setTopics }) {
               <div className="text-red-500">{manageThesesError}</div>
             ) : (
               <div>
+                {/* Υπό ανάθεση */}
+                <h4 className="text-lg font-semibold mb-2">Υπό ανάθεση</h4>
                 {manageTheses.length === 0 ? (
                   <div className="text-gray-500">Δεν υπάρχουν διπλωματικές υπό ανάθεση.</div>
                 ) : (
@@ -439,7 +473,6 @@ function Teacher({ user, topics, setTopics }) {
                       </div>
                       <div className="mb-2">
                         <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{thesis.status}</span>
-                        {/* Show cancellation info if cancelled */}
                         {thesis.status === "ακυρωμένη" && (
                           <div className="text-red-400 text-sm mt-1">
                             Ακυρώθηκε ({thesis.cancellation_reason || "από Διδάσκοντα"})
@@ -452,9 +485,21 @@ function Teacher({ user, topics, setTopics }) {
                       <div className="mb-2">
                         <strong className="text-white">Ημ/νία Οριστικής Ανάθεσης:</strong>{" "}
                         <span className="text-white">
-                          {thesis.official_assignment_date
-                            ? new Date(thesis.official_assignment_date).toLocaleDateString("el-GR")
-                            : "--"}
+                          {(() => {
+                            if (!thesis.official_assignment_date) return "--";
+                            let d = new Date(thesis.official_assignment_date);
+                            if (isNaN(d.getTime())) {
+                              d = new Date(thesis.official_assignment_date.replace(/-/g, "/"));
+                            }
+                            if (isNaN(d.getTime())) return "Μη έγκυρη ημερομηνία";
+                            // DEBUG: diffYears
+                            const assignmentDateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                            const now = new Date();
+                            const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            const diff = nowDateOnly - assignmentDateOnly;
+                            const diffYears = diff / (1000 * 60 * 60 * 24 * 365.25);
+                            return d.toLocaleDateString("el-GR") + ` (diffYears: ${diffYears.toFixed(3)})`;
+                          })()}
                         </span>
                       </div>
                       {/* Cancel button if allowed */}
@@ -477,7 +522,7 @@ function Teacher({ user, topics, setTopics }) {
                       )}
                       <div className="mb-2">
                         <strong className="text-white">Μέλη/Προσκλήσεις:</strong>
-                        {thesis.invitations.length === 0 ? (
+                        {thesis.invitations && thesis.invitations.length === 0 ? (
                           <span className="text-white ml-2">Δεν υπάρχουν προσκλήσεις.</span>
                         ) : (
                           <table
@@ -494,7 +539,7 @@ function Teacher({ user, topics, setTopics }) {
                               </tr>
                             </thead>
                             <tbody>
-                              {thesis.invitations.map(inv => (
+                              {thesis.invitations && thesis.invitations.map(inv => (
                                 <tr key={inv.id}>
                                   <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "90px" }}>{inv.professor_name} {inv.professor_surname}</td>
                                   <td className="border px-1 py-1" style={{ color: "#fff", minWidth: "60px", width: "110px" }}>{inv.professor_email}</td>
@@ -510,43 +555,100 @@ function Teacher({ user, topics, setTopics }) {
                     </div>
                   ))
                 )}
+                {/* Ενεργές */}
+                <h4 className="text-lg font-semibold mb-2 mt-6">Διαχείριση Ενεργών διπλωματικών</h4>
+                {activeManageTheses.length === 0 ? (
+                  <div className="text-gray-500">Δεν υπάρχουν ενεργές διπλωματικές.</div>
+                ) : (
+                  activeManageTheses.map(thesis => (
+                    <div key={thesis.id} className="border p-4 mb-4 rounded bg-[#1f293a]">
+                      <div className="mb-2">
+                        <strong className="text-white">Θέμα:</strong> <span className="text-white">{thesis.title}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Φοιτητής:</strong> <span className="text-white">{thesis.student_name} {thesis.student_surname} ({thesis.student_number})</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{thesis.status}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Ημ/νία Οριστικής Ανάθεσης:</strong>{" "}
+                        <span className="text-white">
+                          {(() => {
+                            if (!thesis.official_assignment_date) return "--";
+                            let d = new Date(thesis.official_assignment_date);
+                            if (isNaN(d.getTime())) {
+                              d = new Date(thesis.official_assignment_date.replace(/-/g, "/"));
+                            }
+                            if (isNaN(d.getTime())) return "Μη έγκυρη ημερομηνία";
+                            // DEBUG: diffYears
+                            const assignmentDateOnly = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                            const now = new Date();
+                            const nowDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            const diff = nowDateOnly - assignmentDateOnly;
+                            const diffYears = diff / (1000 * 60 * 60 * 24 * 365.25);
+                            return d.toLocaleDateString("el-GR") + ` (diffYears: ${diffYears.toFixed(3)})`;
+                          })()}
+                        </span>
+                      </div>
+                      {/* Cancel button if allowed */}
+                      {canCancelThesis(thesis) && (
+                        <button
+                          className="bg-red-600 text-white px-3 py-1 rounded mt-2"
+                          onClick={() =>
+                            setCancelModal({
+                              open: true,
+                              thesis,
+                              gsNumber: "",
+                              gsYear: "",
+                              error: "",
+                              loading: false
+                            })
+                          }
+                        >
+                          Διαγραφή διπλωματικής
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
-          {/* Cancel modal */}
-          {cancelModal.open && (
-            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
-              <div className="bg-white rounded shadow-lg p-6 max-w-sm w-full relative">
-                <button className="absolute top-2 right-2 text-gray-500" onClick={() => setCancelModal({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false })}>&times;</button>
-                <h4 className="text-lg font-bold mb-2">Ακύρωση διπλωματικής</h4>
-                <div className="mb-2">Συμπληρώστε αριθμό και έτος ΓΣ:</div>
-                <div className="mb-2">
-                  <input
-                    type="text"
-                    placeholder="Αριθμός ΓΣ"
-                    value={cancelModal.gsNumber}
-                    onChange={e => setCancelModal(modal => ({ ...modal, gsNumber: e.target.value }))}
-                    className="border px-2 py-1 mr-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Έτος ΓΣ"
-                    value={cancelModal.gsYear}
-                    onChange={e => setCancelModal(modal => ({ ...modal, gsYear: e.target.value }))}
-                    className="border px-2 py-1"
-                  />
-                </div>
-                {cancelModal.error && <div className="text-red-500 mb-2">{cancelModal.error}</div>}
-                <button
-                  className="bg-red-600 text-white px-4 py-2 rounded"
-                  onClick={handleCancelThesis}
-                  disabled={cancelModal.loading}
-                >
-                  Επιβεβαίωση Ακύρωσης
-                </button>
-              </div>
+        </div>
+      )}
+      {/* Cancel modal (moved outside to be sibling, not child, of manage modal) */}
+      {cancelModal.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
+          <div className="cancel-modal max-w-sm w-full relative">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setCancelModal({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false })}>&times;</button>
+            <h4 className="text-lg font-bold mb-2">Ακύρωση διπλωματικής</h4>
+            <div className="mb-2">Συμπληρώστε αριθμό και έτος ΓΣ:</div>
+            <div className="mb-2">
+              <input
+                type="text"
+                placeholder="Αριθμός ΓΣ"
+                value={cancelModal.gsNumber}
+                onChange={e => setCancelModal(modal => ({ ...modal, gsNumber: e.target.value }))}
+                className="border px-2 py-1 mr-2"
+              />
+              <input
+                type="text"
+                placeholder="Έτος ΓΣ"
+                value={cancelModal.gsYear}
+                onChange={e => setCancelModal(modal => ({ ...modal, gsYear: e.target.value }))}
+                className="border px-2 py-1"
+              />
             </div>
-          )}
+            {cancelModal.error && <div className="text-red-500 mb-2">{cancelModal.error}</div>}
+            <button
+              className="bg-red-600 text-white px-4 py-2 rounded"
+              onClick={handleCancelThesis}
+              disabled={cancelModal.loading}
+            >
+              Επιβεβαίωση Ακύρωσης
+            </button>
+          </div>
         </div>
       )}
 

@@ -535,3 +535,13 @@ h2, h3, h4, p, .input-box, button {
     animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
+.cancel-modal {
+  background: #232b3b;
+  border-radius: 40px;
+  padding: 24px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+  border: 2px solid #0ef;
+  position: relative;
+  z-index: 1001;
+}
+

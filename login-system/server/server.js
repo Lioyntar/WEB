@@ -766,6 +766,7 @@ app.get("/api/teacher/active-theses", authenticate, async (req, res) => {
   const conn = await mysql.createConnection(dbConfig);
   const [rows] = await conn.execute(
     `SELECT th.id, th.status, th.topic_id, th.student_id, th.created_at,
+            th.official_assignment_date,
             s.name as student_name, s.surname as student_surname, s.student_number,
             t.title
      FROM theses th
@@ -837,7 +838,7 @@ app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) 
 
   // Βρες τη διπλωματική και έλεγξε αν ο χρήστης είναι επιβλέπων
   const [rows] = await conn.execute(
-    "SELECT id, supervisor_id, official_assignment_date, status FROM theses WHERE id = ?",
+    "SELECT id, supervisor_id, official_assignment_date, status, topic_id FROM theses WHERE id = ?",
     [thesisId]
   );
   if (!rows.length) {
@@ -861,8 +862,28 @@ app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) 
     await conn.end();
     return res.status(400).json({ error: "Δεν έχουν παρέλθει 2 έτη από την οριστική ανάθεση." });
   }
-  // Ακύρωση
+
+  // 1. Καταχώρησε στον πίνακα cancellations
   await conn.execute(
+    `INSERT INTO cancellations (thesis_id, cancelled_by, reason, gs_number, gs_year, cancelled_at)
+     VALUES (?, ?, ?, ?, ?, NOW())`,
+    [thesisId, 'Καθηγητής', 'από Διδάσκοντα', cancel_gs_number, cancel_gs_year]
+  );
+
+  // 2. Διαγραφή notes
+  await conn.execute(
+    "DELETE FROM notes WHERE thesis_id = ?",
+    [thesisId]
+  );
+
+  // 3. Διαγραφή committee_members
+  await conn.execute(
+    "DELETE FROM committee_members WHERE thesis_id = ?",
+    [thesisId]
+  );
+
+  // 4. Ακύρωση της διπλωματικής (status, reason, gs_number, gs_year)
+  const [result] = await conn.execute(
     `UPDATE theses 
      SET status = 'ακυρωμένη', 
          cancellation_reason = 'από Διδάσκοντα',
@@ -871,6 +892,8 @@ app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) 
      WHERE id = ?`,
     [cancel_gs_number, cancel_gs_year, thesisId]
   );
+  console.log('UPDATE theses result:', result);
+
   await conn.end();
   res.json({ success: true });
 });
