@@ -640,16 +640,33 @@ app.delete("/api/topics/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Διαγραφή μόνο αν το θέμα ανήκει στον καθηγητή
-  const [result] = await conn.execute(
-    "DELETE FROM thesis_topics WHERE id = ? AND professor_id = ?",
-    [id, req.user.id]
-  );
-  await conn.end();
-  if (result.affectedRows > 0) {
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ error: "Θέμα δεν βρέθηκε ή δεν έχετε δικαίωμα διαγραφής." });
+  try {
+    await conn.beginTransaction();
+
+    // 1. First delete any theses using this topic
+    await conn.execute(
+      "DELETE FROM theses WHERE topic_id = ? AND supervisor_id = ?",
+      [id, req.user.id]
+    );
+
+    // 2. Then delete the topic
+    const [result] = await conn.execute(
+      "DELETE FROM thesis_topics WHERE id = ? AND professor_id = ?",
+      [id, req.user.id]
+    );
+
+    await conn.commit();
+    
+    if (result.affectedRows > 0) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: "Θέμα δεν βρέθηκε ή δεν έχετε δικαίωμα διαγραφής." });
+    }
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: "Σφάλμα κατά τη διαγραφή", details: err.message });
+  } finally {
+    await conn.end();
   }
 });
 
@@ -826,74 +843,80 @@ app.post("/api/notes/:thesisId", authenticate, async (req, res) => {
 // Start the server on port 5000
 app.listen(5000, () => console.log("Backend running on port 5000"));
 
-// Ακύρωση διπλωματικής από επιβλέποντα (μόνο αν έχουν περάσει 2 έτη από official_assignment_date)
+// Ακύρωση διπλωματικής από επιβλέποντα
 app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) => {
   if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  
   const thesisId = req.params.id;
   const { cancel_gs_number, cancel_gs_year } = req.body;
-  if (!cancel_gs_number || !cancel_gs_year) {
-    return res.status(400).json({ error: "Απαιτείται αριθμός και έτος ΓΣ." });
-  }
   const conn = await mysql.createConnection(dbConfig);
 
-  // Βρες τη διπλωματική και έλεγξε αν ο χρήστης είναι επιβλέπων
-  const [rows] = await conn.execute(
-    "SELECT id, supervisor_id, official_assignment_date, status, topic_id FROM theses WHERE id = ?",
-    [thesisId]
-  );
-  if (!rows.length) {
+  try {
+    // Validate input
+    if (!cancel_gs_number || !cancel_gs_year) {
+      throw new Error("Απαιτείται αριθμός και έτος ΓΣ");
+    }
+
+    // Verify thesis exists and belongs to professor
+    const [thesis] = await conn.execute(
+      `SELECT id, official_assignment_date, status 
+       FROM theses 
+       WHERE id = ? AND supervisor_id = ?`,
+      [thesisId, req.user.id]
+    );
+    
+    if (!thesis.length) {
+      throw new Error("Η διπλωματική δεν βρέθηκε ή δεν έχετε δικαίωμα ακύρωσης");
+    }
+
+    // Verify 2 years have passed
+    const assignmentDate = new Date(thesis[0].official_assignment_date);
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    
+    if (assignmentDate > twoYearsAgo) {
+      throw new Error("Δεν έχουν περάσει 2 χρόνια από την οριστική ανάθεση");
+    }
+
+    await conn.beginTransaction();
+
+    // Insert cancellation record
+    await conn.execute(
+      `INSERT INTO cancellations 
+       (thesis_id, cancelled_by, reason, gs_number, gs_year, cancelled_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [thesisId, 'Καθηγητής', 'από Διδάσκοντα', cancel_gs_number, cancel_gs_year]
+    );
+
+    // Delete related records (invitations, committee_members, notes) in parallel for speed
+    await Promise.all([
+      conn.execute("DELETE FROM notes WHERE thesis_id = ?", [thesisId]),
+      conn.execute("DELETE FROM committee_members WHERE thesis_id = ?", [thesisId]),
+      conn.execute("DELETE FROM invitations WHERE thesis_id = ?", [thesisId])
+    ]);
+
+    // Update thesis status
+    const [result] = await conn.execute(
+      `UPDATE theses 
+       SET status = 'ακυρωμένη'
+       WHERE id = ?`,
+      [thesisId]
+    );
+
+    if (result.affectedRows === 0) {
+      throw new Error("Αποτυχία ενημέρωσης κατάστασης διπλωματικής");
+    }
+
+    await conn.commit();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    console.error("Cancellation error:", err);
+    res.status(500).json({ 
+      error: "Σφάλμα βάσης κατά την ακύρωση",
+      details: err.message 
+    });
+  } finally {
     await conn.end();
-    return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
   }
-  const thesis = rows[0];
-  if (thesis.supervisor_id !== req.user.id) {
-    await conn.end();
-    return res.status(403).json({ error: "Δεν είστε επιβλέπων αυτής της διπλωματικής." });
-  }
-  if (!thesis.official_assignment_date) {
-    await conn.end();
-    return res.status(400).json({ error: "Δεν έχει οριστεί ημερομηνία οριστικής ανάθεσης." });
-  }
-  // Έλεγχος αν έχουν περάσει 2 έτη
-  const assignmentDate = new Date(thesis.official_assignment_date);
-  const now = new Date();
-  const diffYears = (now - assignmentDate) / (1000 * 60 * 60 * 24 * 365.25);
-  if (diffYears < 2) {
-    await conn.end();
-    return res.status(400).json({ error: "Δεν έχουν παρέλθει 2 έτη από την οριστική ανάθεση." });
-  }
-
-  // 1. Καταχώρησε στον πίνακα cancellations
-  await conn.execute(
-    `INSERT INTO cancellations (thesis_id, cancelled_by, reason, gs_number, gs_year, cancelled_at)
-     VALUES (?, ?, ?, ?, ?, NOW())`,
-    [thesisId, 'Καθηγητής', 'από Διδάσκοντα', cancel_gs_number, cancel_gs_year]
-  );
-
-  // 2. Διαγραφή notes
-  await conn.execute(
-    "DELETE FROM notes WHERE thesis_id = ?",
-    [thesisId]
-  );
-
-  // 3. Διαγραφή committee_members
-  await conn.execute(
-    "DELETE FROM committee_members WHERE thesis_id = ?",
-    [thesisId]
-  );
-
-  // 4. Ακύρωση της διπλωματικής (status, reason, gs_number, gs_year)
-  const [result] = await conn.execute(
-    `UPDATE theses 
-     SET status = 'ακυρωμένη', 
-         cancellation_reason = 'από Διδάσκοντα',
-         cancel_gs_number = ?,
-         cancel_gs_year = ?
-     WHERE id = ?`,
-    [cancel_gs_number, cancel_gs_year, thesisId]
-  );
-  console.log('UPDATE theses result:', result);
-
-  await conn.end();
-  res.json({ success: true });
 });
