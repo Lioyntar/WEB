@@ -1351,7 +1351,7 @@ function Student({ user, topics = [] }) {
                       <ul className="list-disc ml-6 fade-in-committee">
                         {details.committee.map((m, i) => (
                           <li key={i} className="fade-in-committee">
-                            {m.name} {m.surname} ({m.role})
+                            <span style={{ color: "#0ef" }}>{m.name} {m.surname} ({m.role})</span>
                           </li>
                         ))}
                       </ul>
