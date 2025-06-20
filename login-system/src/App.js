@@ -451,7 +451,7 @@ function Teacher({ user, topics, setTopics }) {
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content">
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManageTheses(false)}>&times;</button>
-            <h3 className="text-xl font-bold mb-4">Διαχείριση διπλωματικών υπό ανάθεση</h3>
+            <h3 className="text-xl font-bold mb-4">Διαχείριση διπλωματικών</h3>
             {manageThesesLoading ? (
               <div>Φόρτωση...</div>
             ) : manageThesesError ? (
@@ -461,7 +461,7 @@ function Teacher({ user, topics, setTopics }) {
                 {/* Υπό ανάθεση */}
                 <h4 className="text-lg font-semibold mb-2">Υπό ανάθεση</h4>
                 {manageTheses.length === 0 ? (
-                  <div className="text-gray-500">Δεν υπάρχουν διπλωματικές υπό ανάθεση.</div>
+                  <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν διπλωματικές υπό ανάθεση.</span></div>
                 ) : (
                   manageTheses.map(thesis => (
                     <div key={thesis.id} className="border p-4 mb-4 rounded bg-[#1f293a]">
@@ -558,7 +558,7 @@ function Teacher({ user, topics, setTopics }) {
                 {/* Ενεργές */}
                 <h4 className="text-lg font-semibold mb-2 mt-6">Διαχείριση Ενεργών διπλωματικών</h4>
                 {activeManageTheses.length === 0 ? (
-                  <div className="text-gray-500">Δεν υπάρχουν ενεργές διπλωματικές.</div>
+                  <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν ενεργές διπλωματικές</span></div>
                 ) : (
                   activeManageTheses.map(thesis => (
                     <div key={thesis.id} className="border p-4 mb-4 rounded bg-[#1f293a]">
@@ -607,6 +607,32 @@ function Teacher({ user, topics, setTopics }) {
                           }
                         >
                           Διαγραφή διπλωματικής
+                        </button>
+                      )}
+                      {/* ΝΕΟ: Κουμπί Θέσε ως υπό εξέταση */}
+                      {(thesis.status || '').trim().toLowerCase() === "ενεργή" && (
+                        <button
+                          className="bg-blue-600 text-white px-3 py-1 rounded mt-2 ml-2"
+                          onClick={async () => {
+                            if (!window.confirm("Θέλετε να θέσετε τη διπλωματική ως 'Υπό Εξέταση';")) return;
+                            try {
+                              const res = await fetch(`/api/theses/${thesis.id}/set-under-examination`, {
+                                method: "POST",
+                                headers: { Authorization: `Bearer ${user.token}` }
+                              });
+                              if (res.ok) {
+                                setActiveManageTheses(theses =>
+                                  theses.map(t => t.id === thesis.id ? { ...t, status: "υπό εξέταση" } : t)
+                                );
+                              } else {
+                                alert("Αποτυχία αλλαγής κατάστασης.");
+                              }
+                            } catch {
+                              alert("Αποτυχία αλλαγής κατάστασης.");
+                            }
+                          }}
+                        >
+                          Θέσε ως υπό εξέταση
                         </button>
                       )}
                     </div>
@@ -706,7 +732,7 @@ function Teacher({ user, topics, setTopics }) {
                     </div>
                     <div>
                       <h4 className="font-semibold mb-2">Οι σημειώσεις μου:</h4>
-                      {notes.length === 0 && <div className="text-gray-500">Δεν υπάρχουν σημειώσεις.</div>}
+                      {notes.length === 0 && <div className="text-white">Δεν υπάρχουν σημειώσεις.</div>}
                       <ul className="space-y-2 max-h-48 overflow-y-auto">
                         {notes.map(note => (
                           <li key={note.id} className="border p-2 rounded bg-gray-100">
@@ -1235,7 +1261,7 @@ function Student({ user, topics = [] }) {
         </button>
       )}
       {assignedTopics.length === 0 && (
-        <div className="text-gray-500">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
+        <div className="text-white">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
       )}
       {assignedTopics.map(topic => (
         <div key={topic.id} className="border p-4 mb-2">

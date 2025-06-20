@@ -145,7 +145,7 @@ app.get("/api/topics", authenticate, async (req, res) => {
             th.student_id, s.student_number, s.name as student_name, th.status
      FROM thesis_topics t
      JOIN professors p ON t.professor_id = p.id
-     LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση')
+     LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση' OR th.status = 'υπό εξέταση')
      LEFT JOIN students s ON th.student_id = s.id`
   );
   // Return topics as JSON with assignment info
@@ -918,5 +918,32 @@ app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) 
     });
   } finally {
     await conn.end();
+  }
+});
+
+// Αλλαγή κατάστασης διπλωματικής σε "υπό εξέταση" από επιβλέποντα
+app.post("/api/theses/:id/set-under-examination", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const thesisId = req.params.id;
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    // Ενημέρωσε μόνο αν ο καθηγητής είναι επιβλέπων και η διπλωματική είναι ενεργή
+    const [rows] = await conn.execute(
+      `SELECT id, status FROM theses WHERE id = ? AND supervisor_id = ? AND status = 'ενεργή'`,
+      [thesisId, req.user.id]
+    );
+    if (!rows.length) {
+      await conn.end();
+      return res.status(404).json({ error: "Δεν βρέθηκε ενεργή διπλωματική για αλλαγή κατάστασης." });
+    }
+    await conn.execute(
+      `UPDATE theses SET status = 'υπό εξέταση' WHERE id = ?`,
+      [thesisId]
+    );
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: "Σφάλμα κατά την αλλαγή κατάστασης.", details: err.message });
   }
 });
