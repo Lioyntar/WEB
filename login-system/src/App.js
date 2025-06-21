@@ -1971,13 +1971,13 @@ function TopicManagement({ user, topics = [], setTopics }) {
         />
         <label>Όνομα θέματος</label>
       </div>
+      <label>Σύνοψη</label>
       <div className="input-box">
         <textarea
           required
           value={summary}
           onChange={e => setSummary(e.target.value)}
         />
-        <label>Σύνοψη</label>
       </div>
       <input type="file" accept="application/pdf" onChange={e => setFile(e.target.files[0])} />
       <button className="bg-[#0ef] text-[#1f293a] px-4 py-2 add-button" onClick={handleAddTopic}>Προσθήκη</button>
@@ -1995,12 +1995,12 @@ function TopicManagement({ user, topics = [], setTopics }) {
               />
               <label>Όνομα θέματος</label>
             </div>
+            <label>Σύνοψη</label>
             <div className="input-box">
               <textarea
                 value={topic.summary}
                 onChange={e => handleEdit(topic.id, "summary", e.target.value)}
               />
-              <label>Σύνοψη</label>
             </div>
             {topic.fileName && <p className="text-sm text-white">Αρχείο: {topic.fileName}</p>}
           </div>
@@ -3041,7 +3041,7 @@ function Student({ user, topics = [] }) {
       {/* Modal διαχείρισης διπλωματικής */}
       {showManage && (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
-        <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+        <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManage(false)}>&times;</button>
             {manageLoading ? (
                 <div>Φόρτωση...</div>
