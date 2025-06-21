@@ -65,6 +65,38 @@ function App() {
     }
   }, [user]); // Runs when user changes
 
+  // Check for thesis status changes and refresh topics
+  useEffect(() => {
+    if (user && topics.length > 0) {
+      const assignedTopic = topics.find(t => t.assignedTo === user.username);
+      if (assignedTopic && assignedTopic.status === "υπό ανάθεση") {
+        // Set up interval to check for status changes every 30 seconds
+        const interval = setInterval(async () => {
+          try {
+            const res = await fetch("/api/topics", {
+              headers: { Authorization: `Bearer ${user.token}` }
+            });
+            if (res.ok) {
+              const updatedTopics = await res.json();
+              const updatedAssignedTopic = updatedTopics.find(t => t.assignedTo === user.username);
+              
+              // If status changed from "υπό ανάθεση" to "υπό εξέταση", update topics
+              if (updatedAssignedTopic && updatedAssignedTopic.status === "υπό εξέταση") {
+                setTopics(updatedTopics);
+                // Show notification to user
+                alert("Η διπλωματική σας έγινε υπό εξέταση! Μπορείτε τώρα να ανεβάσετε πρόχειρο και να ορίσετε λεπτομέρειες παρουσίασης.");
+              }
+            }
+          } catch (error) {
+            // Ignore errors in background refresh
+          }
+        }, 30000); // Check every 30 seconds
+
+        return () => clearInterval(interval);
+      }
+    }
+  }, [user, topics]);
+
   return (
     <Router>
       {/* Skip link for accessibility */}
@@ -2119,6 +2151,17 @@ function Student({ user, topics = [] }) {
   // Υπολογισμός αποδεκτών προσκλήσεων
   const acceptedCount = committeeInvitations.filter(inv => inv.status === "Αποδεκτή").length;
 
+  // Auto-close modal when thesis becomes active
+  useEffect(() => {
+    if (acceptedCount >= 2 && showManage) {
+      // Close modal after 3 seconds to let user see the message
+      const timer = setTimeout(() => {
+        setShowManage(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [acceptedCount, showManage]);
+
   // Fetch draft info when modal opens
   const handleShowDraftModal = async () => {
     if (!assignedTopic) return;
@@ -2454,43 +2497,44 @@ function Student({ user, topics = [] }) {
       >
         Επεξεργασία Προφίλ
       </button>
-      {/* Κουμπί διαχείρισης διπλωματικής */}
+      {/* Κουμπιά διαχείρισης διπλωματικής */}
       {assignedTopic && (
         <>
-          {/* Κουμπιά που εμφανίζονται μόνο αν ΔΕΝ είναι περατωμένη */}
-          {(assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "περατωμένη") && (
+          {/* Κουμπί διαχείρισης τριμελούς - μόνο για "υπό ανάθεση" */}
+          {assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "υπό ανάθεση" && (
+            <button
+              className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+              onClick={handleShowManage}
+            >
+              Διαχείριση τριμελούς επιτροπής
+            </button>
+          )}
+          
+          {/* Κουμπιά για "υπό εξέταση" κατάσταση */}
+          {assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "υπό εξέταση" && (
             <>
               <button
                 className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-                onClick={handleShowManage}
-                disabled={!assignedTopic || (assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "υπό ανάθεση")}
-              >
-                Διαχείριση διπλωματικής εργασίας
-              </button>
-              <button
-                className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
                 onClick={handleShowDraftModal}
-                disabled={!assignedTopic}
               >
                 Πρόχειρη Ανάρτηση
               </button>
               <button
                 className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
                 onClick={handleShowPresentationModal}
-                disabled={!assignedTopic}
               >
                 Λεπτομέρειες Παρουσίασης
               </button>
               <button
                 className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
                 onClick={handleShowLibraryModal}
-                disabled={!assignedTopic}
               >
                 Συνδέσμος Βιβλιοθήκης
               </button>
             </>
           )}
-          {/* Κουμπί που εμφανίζεται πάντα */}
+          
+          {/* Κουμπί εξεταστικών εγγράφων - για όλες τις καταστάσεις */}
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowMinutesModal}
@@ -2775,6 +2819,15 @@ function Student({ user, topics = [] }) {
                             )}
                         </>
                     )}
+                    {/* Κουμπί κλεισίματος */}
+                    <div className="mt-4 text-center">
+                        <button 
+                            className="bg-gray-500 text-white px-4 py-2 rounded"
+                            onClick={() => setShowManage(false)}
+                        >
+                            Κλείσιμο
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
