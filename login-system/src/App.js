@@ -2187,6 +2187,12 @@ function Student({ user, topics = [] }) {
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
+      {/* Ειδοποίηση για περατωμένες διπλωματικές */}
+      {assignedTopic && (assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "περατωμένη") && (
+        <div className="bg-green-600 text-white p-3 rounded mb-4" style={{ color: "white !important" }}>
+          <strong style={{ color: "white !important" }}>Συγχαρητήρια! Η διπλωματική σας έχει ολοκληρωθεί. Μπορείτε μόνο να προβάλλετε πληροφορίες και το πρακτικό εξέτασης.</strong>
+        </div>
+      )}
       {/* Κουμπί επεξεργασίας προφίλ */}
       <button
         className="bg-[#0ef] text-white px-3 py-1 mb-4"
@@ -2197,34 +2203,40 @@ function Student({ user, topics = [] }) {
       {/* Κουμπί διαχείρισης διπλωματικής */}
       {assignedTopic && (
         <>
-          <button
-            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-            onClick={handleShowManage}
-            disabled={!assignedTopic || (assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "υπό ανάθεση")}
-          >
-            Διαχείριση διπλωματικής εργασίας
-          </button>
-          <button
-            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-            onClick={handleShowDraftModal}
-            disabled={!assignedTopic}
-          >
-            Πρόχειρη Ανάρτηση
-          </button>
-          <button
-            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-            onClick={handleShowPresentationModal}
-            disabled={!assignedTopic}
-          >
-            Λεπτομέρειες Παρουσίασης
-          </button>
-          <button
-            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-            onClick={handleShowLibraryModal}
-            disabled={!assignedTopic}
-          >
-            Συνδέσμος Βιβλιοθήκης
-          </button>
+          {/* Κουμπιά που εμφανίζονται μόνο αν ΔΕΝ είναι περατωμένη */}
+          {(assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "περατωμένη") && (
+            <>
+              <button
+                className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+                onClick={handleShowManage}
+                disabled={!assignedTopic || (assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "υπό ανάθεση")}
+              >
+                Διαχείριση διπλωματικής εργασίας
+              </button>
+              <button
+                className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+                onClick={handleShowDraftModal}
+                disabled={!assignedTopic}
+              >
+                Πρόχειρη Ανάρτηση
+              </button>
+              <button
+                className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+                onClick={handleShowPresentationModal}
+                disabled={!assignedTopic}
+              >
+                Λεπτομέρειες Παρουσίασης
+              </button>
+              <button
+                className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+                onClick={handleShowLibraryModal}
+                disabled={!assignedTopic}
+              >
+                Συνδέσμος Βιβλιοθήκης
+              </button>
+            </>
+          )}
+          {/* Κουμπί που εμφανίζεται πάντα */}
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowMinutesModal}
