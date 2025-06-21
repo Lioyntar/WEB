@@ -153,28 +153,33 @@ app.post("/api/login", async (req, res) => {
 
 // Get all thesis topics (professor view)
 app.get("/api/topics", authenticate, async (req, res) => {
-  const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Select topics, join with professor name, and left join with theses and students for assignment info
-  const [rows] = await conn.execute(
-    `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path,
-            th.student_id, s.student_number, s.name as student_name, th.status, th.id as th_id
-     FROM thesis_topics t
-     JOIN professors p ON t.professor_id = p.id
-     LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση' OR th.status = 'υπό εξέταση')
-     LEFT JOIN students s ON th.student_id = s.id`
-  );
-  // Return topics as JSON with assignment info
-  res.json(rows.map(r => ({
-    id: r.id,
-    title: r.title,
-    summary: r.summary,
-    professor: r.professor,
-    fileName: r.pdf_file_path,
-    assignedTo: r.student_number || null,
-    assignedStudentName: r.student_name || null,
-    status: r.status || null,
-    thesis_id: r.th_id || null
-  })));
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    // Simplified, more reliable query
+    const [rows] = await conn.execute(`
+      SELECT 
+        tt.id, 
+        tt.title, 
+        tt.summary, 
+        tt.pdf_file_path AS fileName, 
+        p.name AS professor,
+        s.student_number AS assignedTo,
+        CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
+        t.status,
+        t.id AS thesis_id
+      FROM thesis_topics tt
+      INNER JOIN professors p ON tt.professor_id = p.id
+      LEFT JOIN theses t ON t.topic_id = tt.id
+      LEFT JOIN students s ON t.student_id = s.id
+      ORDER BY tt.id
+    `);
+    
+    await conn.end();
+    res.json(rows);
+  } catch (err) {
+    console.error("Error fetching topics:", err);
+    res.status(500).json({ error: "Σφάλμα ανάκτησης θεμάτων." });
+  }
 });
 
 // Add a new thesis topic (professor only)
@@ -306,6 +311,7 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
     );
     if (thesisRows.length > 0) {
       thesis = thesisRows[0];
+      debug.thesis_id = thesis.id; // Add thesis_id to debug info
     } else {
       // Debug: log if not found
       console.log("No thesis found for student_id", req.user.id, "and topic_id", topicId);
@@ -398,6 +404,81 @@ app.get("/api/professors", authenticate, async (req, res) => {
   res.json(rows);
 });
 
+// Επιστροφή προσκλήσεων για διπλωματική (και αποδεκτών μελών) - για φοιτητές με topicId
+app.get("/api/thesis-invitations-by-topic/:topicId", authenticate, async (req, res) => {
+  if (req.user.role !== "Φοιτητής") return res.status(403).json({ error: "Forbidden" });
+  
+  const topicId = req.params.topicId;
+  const conn = await mysql.createConnection(dbConfig);
+
+  // Βρες πρώτα τη διπλωματική του φοιτητή για αυτό το θέμα
+  const [thesisRows] = await conn.execute(
+    "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+    [topicId, req.user.id]
+  );
+
+  if (!thesisRows.length) {
+    await conn.end();
+    return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+  }
+
+  const thesisId = thesisRows[0].id;
+
+  // Προσκλήσεις που είναι ακόμα ενεργές (pending)
+  const [invRows] = await conn.execute(
+    `SELECT i.id, i.invited_professor_id as professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, i.status, i.invitation_date
+     FROM invitations i
+     JOIN professors p ON i.invited_professor_id = p.id
+     WHERE i.thesis_id = ?`,
+    [thesisId]
+  );
+
+  // Μέλη επιτροπής που έχουν αποδεχθεί (ή απορρίψει)
+  const [committeeRows] = await conn.execute(
+    `SELECT cm.professor_id, p.name as professor_name, p.surname as professor_surname, p.email as professor_email, cm.response as status, cm.invitation_date, cm.response_date
+     FROM committee_members cm
+     JOIN professors p ON cm.professor_id = p.id
+     WHERE cm.thesis_id = ?`,
+    [thesisId]
+  );
+
+  await conn.end();
+
+  // Map statuses to Greek
+  function mapStatus(status) {
+    if (!status) return "Αναμένεται";
+    if (status === "pending") return "Αναμένεται";
+    if (status === "accepted") return "Αποδεκτή";
+    if (status === "rejected") return "Απορρίφθηκε";
+    return status;
+  }
+
+  const all = [
+    ...invRows.map(inv => ({
+      id: inv.id,
+      professor_id: inv.professor_id,
+      professor_name: inv.professor_name,
+      professor_surname: inv.professor_surname,
+      professor_email: inv.professor_email,
+      status: mapStatus(inv.status),
+      invitation_date: inv.invitation_date || null,
+      response_date: null
+    })),
+    ...committeeRows.map(cm => ({
+      id: `cm_${cm.professor_id}`,
+      professor_id: cm.professor_id,
+      professor_name: cm.professor_name,
+      professor_surname: cm.professor_surname,
+      professor_email: cm.professor_email,
+      status: mapStatus(cm.status),
+      invitation_date: cm.invitation_date || null,
+      response_date: cm.response_date || null
+    }))
+  ];
+
+  res.json(all);
+});
+
 // Επιστροφή προσκλήσεων για διπλωματική (και αποδεκτών μελών)
 app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
   const thesisId = req.params.thesisId;
@@ -456,6 +537,74 @@ app.get("/api/thesis-invitations/:thesisId", authenticate, async (req, res) => {
   ];
 
   res.json(all);
+});
+
+// Αποστολή πρόσκλησης σε διδάσκοντα - για φοιτητές με topicId
+app.post("/api/thesis-invitations-by-topic/:topicId/invite", authenticate, async (req, res) => {
+  if (req.user.role !== "Φοιτητής") return res.status(403).json({ error: "Forbidden" });
+  
+  const topicId = req.params.topicId;
+  const { professorId } = req.body;
+  if (!professorId) return res.status(400).json({ error: "Missing professorId" });
+  const conn = await mysql.createConnection(dbConfig);
+
+  try {
+    // Βρες τη διπλωματική του φοιτητή για αυτό το θέμα
+    const [thesisRows] = await conn.execute(
+      "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+      [topicId, req.user.id]
+    );
+    
+    if (thesisRows.length === 0) {
+      await conn.end();
+      return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+    }
+    
+    const thesisId = thesisRows[0].id;
+
+    // Έλεγξε αν υπάρχει ο καθηγητής
+    const [profRows] = await conn.execute(
+      "SELECT id FROM professors WHERE id = ?",
+      [professorId]
+    );
+    if (!profRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: "Ο διδάσκων δεν βρέθηκε." });
+    }
+
+    // Έλεγχος αν υπάρχουν ήδη 2 αποδεκτές προσκλήσεις
+    const [accepted] = await conn.execute(
+      "SELECT COUNT(*) as cnt FROM invitations WHERE thesis_id = ? AND status = 'Αποδεκτή'",
+      [thesisId]
+    );
+    if (accepted[0].cnt >= 2) {
+      await conn.end();
+      return res.status(400).json({ error: "Έχουν ήδη αποδεχθεί 2 μέλη." });
+    }
+
+    // Μην επιτρέπεις διπλή πρόσκληση στον ίδιο
+    const [exists] = await conn.execute(
+      "SELECT id FROM invitations WHERE thesis_id = ? AND invited_professor_id = ?",
+      [thesisId, professorId]
+    );
+    if (exists.length > 0) {
+      await conn.end();
+      return res.status(400).json({ error: "Έχει ήδη σταλεί πρόσκληση σε αυτόν τον διδάσκοντα." });
+    }
+
+    // Εισαγωγή πρόσκλησης με status = 'Αναμένεται' by default
+    await conn.execute(
+      `INSERT INTO invitations (thesis_id, invited_professor_id, invited_by_student_id, status, invitation_date)
+       VALUES (?, ?, ?, 'Αναμένεται', NOW())`,
+      [thesisId, professorId, req.user.id]
+    );
+
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: "Σφάλμα βάσης κατά την αποστολή πρόσκλησης.", details: err.message });
+  }
 });
 
 // Αποστολή πρόσκλησης σε διδάσκοντα
@@ -2109,3 +2258,268 @@ app.get('/api/admin/export-template', authenticate, async (req, res) => {
 
   res.json(template);
 });
+
+// POST: Secretariat sets thesis as active with GS number
+app.post('/api/admin/theses/:thesisId/set-active', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const { thesisId } = req.params;
+  const { gsNumber, gsYear } = req.body;
+
+  if (!gsNumber || !gsYear) {
+    return res.status(400).json({ error: 'Απαιτούνται αριθμός και έτος ΓΣ.' });
+  }
+
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    
+    // Check if thesis exists and is in "υπό ανάθεση" status
+    const [theses] = await conn.execute(
+      'SELECT * FROM theses WHERE id = ? AND status = "υπό ανάθεση"',
+      [thesisId]
+    );
+
+    if (theses.length === 0) {
+      await conn.end();
+      return res.status(404).json({ error: 'Η διπλωματική δεν βρέθηκε ή δεν είναι υπό ανάθεση.' });
+    }
+
+    // Update thesis status to active and add GS info
+    await conn.execute(
+      `UPDATE theses SET 
+       status = 'ενεργή', 
+       gs_number = ?, 
+       gs_year = ?,
+       official_assignment_date = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [gsNumber, gsYear, thesisId]
+    );
+
+    await conn.end();
+    res.json({ success: true, message: 'Η διπλωματική έγινε ενεργή.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Σφάλμα κατά την ενεργοποίηση της διπλωματικής', details: err.message });
+  }
+});
+
+// POST: Secretariat cancels thesis
+app.post('/api/admin/theses/:thesisId/cancel', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const { thesisId } = req.params;
+  const { gsNumber, gsYear, reason } = req.body;
+
+  if (!gsNumber || !gsYear || !reason) {
+    return res.status(400).json({ error: 'Απαιτούνται αριθμός, έτος ΓΣ και λόγος ακύρωσης.' });
+  }
+
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    
+    // Check if thesis exists and is in "ενεργή" status
+    const [theses] = await conn.execute(
+      'SELECT * FROM theses WHERE id = ? AND status = "ενεργή"',
+      [thesisId]
+    );
+
+    if (theses.length === 0) {
+      await conn.end();
+      return res.status(404).json({ error: 'Η διπλωματική δεν βρέθηκε ή δεν είναι σε ενεργή κατάσταση.' });
+    }
+
+    // Update thesis status to cancelled
+    await conn.execute(
+      `UPDATE theses SET 
+       status = 'ακυρωμένη', 
+       cancellation_reason = ?
+       WHERE id = ?`,
+      [reason, thesisId]
+    );
+
+    // Add cancellation record
+    await conn.execute(
+      `INSERT INTO cancellations 
+       (thesis_id, cancelled_by, reason, gs_number, gs_year) 
+       VALUES (?, 'secretariat', ?, ?, ?)`,
+      [thesisId, reason, gsNumber, gsYear]
+    );
+
+    await conn.end();
+    res.json({ success: true, message: 'Η διπλωματική ακυρώθηκε.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Σφάλμα κατά την ακύρωση της διπλωματικής', details: err.message });
+  }
+});
+
+// GET: Get thesis details with GS info for Secretariat
+app.get('/api/admin/theses/:thesisId/details', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const { thesisId } = req.params;
+
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    
+    const [theses] = await conn.execute(
+      `SELECT t.*, 
+              tt.title, tt.summary,
+              s.name as student_name, s.surname as student_surname, s.student_number,
+              p.name as supervisor_name, p.surname as supervisor_surname,
+              t.gs_number, t.gs_year, t.cancellation_reason
+       FROM theses t
+       LEFT JOIN thesis_topics tt ON t.topic_id = tt.id
+       LEFT JOIN students s ON t.student_id = s.id
+       LEFT JOIN professors p ON t.supervisor_id = p.id
+       WHERE t.id = ?`,
+      [thesisId]
+    );
+
+    if (theses.length === 0) {
+      await conn.end();
+      return res.status(404).json({ error: 'Η διπλωματική δεν βρέθηκε.' });
+    }
+
+    const thesis = theses[0];
+
+    // Get cancellation history
+    const [cancellations] = await conn.execute(
+      'SELECT * FROM cancellations WHERE thesis_id = ? ORDER BY cancelled_at DESC',
+      [thesisId]
+    );
+
+    thesis.cancellations = cancellations;
+
+    await conn.end();
+    res.json(thesis);
+  } catch (err) {
+    res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση λεπτομερειών', details: err.message });
+  }
+});
+
+// POST: Secretariat updates GS info for an active thesis
+app.post('/api/admin/theses/:thesisId/update-gs', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const { thesisId } = req.params;
+  const { gsNumber, gsYear } = req.body;
+
+  if (!gsNumber || !gsYear) {
+    return res.status(400).json({ error: 'Απαιτούνται αριθμός και έτος ΓΣ.' });
+  }
+
+  try {
+    const conn = await mysql.createConnection(dbConfig);
+    
+    // Check if thesis exists and is in "ενεργή" status
+    const [theses] = await conn.execute(
+      'SELECT * FROM theses WHERE id = ? AND status = "ενεργή"',
+      [thesisId]
+    );
+
+    if (theses.length === 0) {
+      await conn.end();
+      return res.status(404).json({ error: 'Η διπλωματική δεν βρέθηκε ή δεν είναι ενεργή.' });
+    }
+
+    // Update thesis with new GS info
+    await conn.execute(
+      `UPDATE theses SET 
+       gs_number = ?, 
+       gs_year = ?
+       WHERE id = ?`,
+      [gsNumber, gsYear, thesisId]
+    );
+
+    await conn.end();
+    res.json({ success: true, message: 'Τα στοιχεία ΓΣ ενημερώθηκαν επιτυχώς.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Σφάλμα κατά την ενημέρωση των στοιχείων ΓΣ', details: err.message });
+  }
+});
+
+// POST: Set a thesis as 'completed' (secretariat only)
+app.post('/api/admin/theses/:thesisId/set-completed', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const { thesisId } = req.params;
+  const conn = await mysql.createConnection(dbConfig);
+
+  try {
+    await conn.beginTransaction();
+
+    // 1. Check thesis status and if link exists
+    const [thesisRows] = await conn.execute(
+      'SELECT status, library_repository_link FROM theses WHERE id = ?',
+      [thesisId]
+    );
+
+    if (thesisRows.length === 0) {
+      await conn.rollback();
+      await conn.end();
+      return res.status(404).json({ error: 'Η διπλωματική εργασία δεν βρέθηκε.' });
+    }
+
+    const thesis = thesisRows[0];
+    if ((thesis.status || '').toLowerCase() !== 'υπό εξέταση') {
+      await conn.rollback();
+      await conn.end();
+      return res.status(400).json({ error: `Η διπλωματική εργασία δεν είναι σε κατάσταση "Υπό Εξέταση".` });
+    }
+    
+    // 2. Check for library submission link
+    if (!thesis.library_repository_link) {
+      await conn.rollback();
+      await conn.end();
+      return res.status(400).json({ error: 'Δεν έχει καταχωρηθεί ο σύνδεσμος προς το Νημερτή από το φοιτητή/τρια.' });
+    }
+
+    // 3. Check for at least one grade
+    const [gradeRows] = await conn.execute(
+      'SELECT grade FROM grades WHERE thesis_id = ?',
+      [thesisId]
+    );
+
+    if (gradeRows.length === 0) {
+      await conn.rollback();
+      await conn.end();
+      return res.status(400).json({ error: 'Δεν έχει καταχωρηθεί βαθμός για αυτήν τη διπλωματική.' });
+    }
+    
+    // 4. Calculate final grade
+    const totalGrade = gradeRows.reduce((sum, grade) => sum + parseFloat(grade.grade), 0);
+    const finalGrade = (totalGrade / gradeRows.length).toFixed(2);
+
+
+    // 5. If all checks pass, update status and final_grade
+    await conn.execute(
+      'UPDATE theses SET status = "περατωμένη", final_grade = ? WHERE id = ?',
+      [finalGrade, thesisId]
+    );
+
+    await conn.commit();
+    await conn.end();
+
+    res.json({ success: true, message: 'Η κατάσταση της διπλωματικής άλλαξε σε "Περατωμένη".' });
+
+  } catch (err) {
+    await conn.rollback();
+    await conn.end();
+    console.error('Set-completed error:', err);
+    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την αλλαγή κατάστασης.', details: err.message });
+  }
+});
+
+// Helper to hash passwords (for development/setup purposes)
+const plainPasswords = {
+  // ... (add username: password pairs here)
+};

@@ -1507,18 +1507,35 @@ function InitialAssignment({ user, topics = [], setTopics }) {
 
   // Assign topic to student
   const assignTopic = async (topicId, student) => {
-    const res = await fetch(`/api/topics/${topicId}/assign`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${user.token}`
-      },
-      body: JSON.stringify({ studentId: student.id })
-    });
-    if (res.ok) {
-      setTopics(topics.map(t =>
-        t.id === topicId ? { ...t, assignedTo: student.student_number, assignedStudentName: student.name } : t
-      ));
+    try {
+      const res = await fetch(`/api/topics/${topicId}/assign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ studentId: student.id })
+      });
+
+      if (res.ok) {
+        const newThesis = await res.json(); // Get the complete new thesis data
+        setTopics(topics.map(t =>
+          t.id === topicId 
+            ? { 
+                ...t, 
+                assignedTo: newThesis.student_number, 
+                assignedStudentName: newThesis.assignedStudentName,
+                status: newThesis.status, // <-- Correctly update status
+                thesis_id: newThesis.id,  // <-- Correctly add the new thesis_id
+              } 
+            : t
+        ));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Αποτυχία ανάθεσης: ${err.error || 'Άγνωστο σφάλμα'}`);
+      }
+    } catch (error) {
+      alert('Προέκυψε ένα σφάλμα. Παρακαλώ δοκιμάστε ξανά.');
     }
   };
 
@@ -1778,12 +1795,13 @@ function Student({ user, topics = [] }) {
 
   // Άνοιγμα modal διαχείρισης
   const handleShowManage = async () => {
-    if (!thesisId) return;
+    if (!assignedTopic) return;
     setShowManage(true);
     setManageLoading(true);
     setManageError("");
     try {
-      const res = await fetch(`/api/thesis-invitations/${thesisId}`, {
+      // Use the new endpoint that works with topicId for students
+      const res = await fetch(`/api/thesis-invitations-by-topic/${assignedTopic.id}`, {
         headers: { Authorization: `Bearer ${user.token}` }
       });
       if (res.ok) {
@@ -1819,9 +1837,8 @@ function Student({ user, topics = [] }) {
   const handleInvite = async (professorId) => {
     setManageError("");
     try {
-      // Χρησιμοποίησε thesisId αντί για details.id για να δουλεύει πάντα
-      const idToUse = thesisId;
-      const res = await fetch(`/api/thesis-invitations/${idToUse}/invite`, {
+      // Use the new endpoint that works with topicId for students
+      const res = await fetch(`/api/thesis-invitations-by-topic/${assignedTopic.id}/invite`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1831,7 +1848,7 @@ function Student({ user, topics = [] }) {
       });
       if (res.ok) {
         // Ενημέρωσε τις προσκλήσεις
-        const updated = await fetch(`/api/thesis-invitations/${idToUse}`, {
+        const updated = await fetch(`/api/thesis-invitations-by-topic/${assignedTopic.id}`, {
           headers: { Authorization: `Bearer ${user.token}` }
         });
         setCommitteeInvitations(await updated.json());
@@ -1850,16 +1867,32 @@ function Student({ user, topics = [] }) {
 
   // Fetch draft info when modal opens
   const handleShowDraftModal = async () => {
+    if (!assignedTopic) return;
     setShowDraftModal(true);
     setDraftLoading(true);
     setDraftError("");
     setDraftInfo(null);
     try {
-      const res = await fetch(`/api/draft-submission/${thesisId}`, {
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
         headers: { Authorization: `Bearer ${user.token}` }
       });
-      if (res.ok) {
-        setDraftInfo(await res.json());
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const res = await fetch(`/api/draft-submission/${actualThesisId}`, {
+            headers: { Authorization: `Bearer ${user.token}` }
+          });
+          if (res.ok) {
+            setDraftInfo(await res.json());
+          } else {
+            setDraftInfo(null);
+          }
+        } else {
+          setDraftInfo(null);
+        }
       } else {
         setDraftInfo(null);
       }
@@ -1872,30 +1905,45 @@ function Student({ user, topics = [] }) {
   // Upload draft
   const handleDraftUpload = async (e) => {
     e.preventDefault();
-    if (!thesisId) return;
+    if (!assignedTopic) return;
     setDraftLoading(true);
     setDraftError("");
     try {
-      const formData = new FormData();
-      formData.append("thesisId", thesisId);
-      if (draftFile) formData.append("file", draftFile);
-      formData.append("externalLinks", draftLinks);
-      const res = await fetch("/api/draft-submission", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${user.token}` },
-        body: formData
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
       });
-      if (res.ok) {
-        // Refresh info
-        const infoRes = await fetch(`/api/draft-submission/${thesisId}`, {
-          headers: { Authorization: `Bearer ${user.token}` }
-        });
-        setDraftInfo(await infoRes.json());
-        setDraftFile(null);
-        setDraftLinks("");
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const formData = new FormData();
+          formData.append("thesisId", actualThesisId);
+          if (draftFile) formData.append("file", draftFile);
+          formData.append("externalLinks", draftLinks);
+          const res = await fetch("/api/draft-submission", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${user.token}` },
+            body: formData
+          });
+          if (res.ok) {
+            // Refresh info
+            const infoRes = await fetch(`/api/draft-submission/${actualThesisId}`, {
+              headers: { Authorization: `Bearer ${user.token}` }
+            });
+            setDraftInfo(await infoRes.json());
+            setDraftFile(null);
+            setDraftLinks("");
+          } else {
+            const err = await res.json().catch(() => ({}));
+            setDraftError((err.error || "Αποτυχία ανάρτησης.") + (err.details ? `: ${err.details}` : ""));
+          }
+        } else {
+          setDraftError("Δεν βρέθηκε διπλωματική που να σας ανήκει.");
+        }
       } else {
-        const err = await res.json().catch(() => ({}));
-        setDraftError((err.error || "Αποτυχία ανάρτησης.") + (err.details ? `: ${err.details}` : ""));
+        setDraftError("Δεν βρέθηκε διπλωματική που να σας ανήκει.");
       }
     } catch {
       setDraftError("Αποτυχία ανάρτησης.");
@@ -1905,6 +1953,7 @@ function Student({ user, topics = [] }) {
 
   // Fetch presentation details when modal opens
   const handleShowPresentationModal = async () => {
+    if (!assignedTopic) return;
     setShowPresentationModal(true);
     setPresentationLoading(true);
     setPresentationError("");
@@ -1914,19 +1963,34 @@ function Student({ user, topics = [] }) {
     setPresentationMode("");
     setPresentationLocation("");
     try {
-      const res = await fetch(`/api/presentation-details/${thesisId}`, {
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
         headers: { Authorization: `Bearer ${user.token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setPresentationInfo(data);
-          // Parse the presentation date and time
-          const dateTime = new Date(data.presentation_date);
-          setPresentationDate(dateTime.toISOString().split('T')[0]);
-          setPresentationTime(dateTime.toTimeString().slice(0, 5));
-          setPresentationMode(data.mode);
-          setPresentationLocation(data.location_or_link);
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const res = await fetch(`/api/presentation-details/${actualThesisId}`, {
+            headers: { Authorization: `Bearer ${user.token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data) {
+              setPresentationInfo(data);
+              // Parse the presentation date and time
+              const dateTime = new Date(data.presentation_date);
+              setPresentationDate(dateTime.toISOString().split('T')[0]);
+              setPresentationTime(dateTime.toTimeString().slice(0, 5));
+              setPresentationMode(data.mode);
+              setPresentationLocation(data.location_or_link);
+            }
+          } else {
+            setPresentationInfo(null);
+          }
+        } else {
+          setPresentationInfo(null);
         }
       } else {
         setPresentationInfo(null);
@@ -1940,7 +2004,7 @@ function Student({ user, topics = [] }) {
   // Save presentation details
   const handleSavePresentation = async (e) => {
     e.preventDefault();
-    if (!thesisId) return;
+    if (!assignedTopic) return;
     if (!presentationDate || !presentationTime || !presentationMode || !presentationLocation) {
       setPresentationError("Συμπληρώστε όλα τα πεδία.");
       return;
@@ -1957,42 +2021,57 @@ function Student({ user, topics = [] }) {
     setPresentationLoading(true);
     setPresentationError("");
     try {
-      // Create proper ISO datetime string for backend
-      const presentationDateTimeString = `${presentationDate}T${presentationTime}:00`;
-      
-      const res = await fetch("/api/presentation-details", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${user.token}`
-        },
-        body: JSON.stringify({
-          thesisId,
-          presentationDate: presentationDateTimeString,
-          mode: presentationMode,
-          locationOrLink: presentationLocation
-        })
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
       });
-      
-      if (res.ok) {
-        // Refresh info
-        const infoRes = await fetch(`/api/presentation-details/${thesisId}`, {
-          headers: { Authorization: `Bearer ${user.token}` }
-        });
-        const data = await infoRes.json();
-        if (data) {
-          setPresentationInfo(data);
-          const dateTime = new Date(data.presentation_date);
-          setPresentationDate(dateTime.toISOString().split('T')[0]);
-          setPresentationTime(dateTime.toTimeString().slice(0, 5));
-          setPresentationMode(data.mode);
-          setPresentationLocation(data.location_or_link);
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          // Create proper ISO datetime string for backend
+          const presentationDateTimeString = `${presentationDate}T${presentationTime}:00`;
+          
+          const res = await fetch("/api/presentation-details", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${user.token}`
+            },
+            body: JSON.stringify({
+              thesisId: actualThesisId,
+              presentationDate: presentationDateTimeString,
+              mode: presentationMode,
+              locationOrLink: presentationLocation
+            })
+          });
+          
+          if (res.ok) {
+            // Refresh info
+            const infoRes = await fetch(`/api/presentation-details/${actualThesisId}`, {
+              headers: { Authorization: `Bearer ${user.token}` }
+            });
+            const data = await infoRes.json();
+            if (data) {
+              setPresentationInfo(data);
+              const dateTime = new Date(data.presentation_date);
+              setPresentationDate(dateTime.toISOString().split('T')[0]);
+              setPresentationTime(dateTime.toTimeString().slice(0, 5));
+              setPresentationMode(data.mode);
+              setPresentationLocation(data.location_or_link);
+            }
+            // Close modal on success
+            setShowPresentationModal(false);
+          } else {
+            const err = await res.json().catch(() => ({}));
+            setPresentationError(err.error || err.details || "Αποτυχία αποθήκευσης.");
+          }
+        } else {
+          setPresentationError("Δεν βρέθηκε διπλωματική που να σας ανήκει.");
         }
-        // Close modal on success
-        setShowPresentationModal(false);
       } else {
-        const err = await res.json().catch(() => ({}));
-        setPresentationError(err.error || err.details || "Αποτυχία αποθήκευσης.");
+        setPresentationError("Δεν βρέθηκε διπλωματική που να σας ανήκει.");
       }
     } catch (err) {
       console.error('Presentation save error:', err);
@@ -2002,16 +2081,32 @@ function Student({ user, topics = [] }) {
   };
 
   const handleShowLibraryModal = async () => {
+    if (!assignedTopic) return;
     setShowLibraryModal(true);
     setLibraryError('');
     setLibraryLoading(true);
     try {
-      const res = await fetch(`/api/library-submission/${thesisId}`, {
-        headers: { Authorization: `Bearer ${user.token}` },
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
       });
-      const data = await res.json();
-      if (data && data.repository_link) {
-        setLibraryLink(data.repository_link);
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const res = await fetch(`/api/library-submission/${actualThesisId}`, {
+            headers: { Authorization: `Bearer ${user.token}` },
+          });
+          const data = await res.json();
+          if (data && data.repository_link) {
+            setLibraryLink(data.repository_link);
+          } else {
+            setLibraryLink('');
+          }
+        } else {
+          setLibraryLink('');
+        }
       } else {
         setLibraryLink('');
       }
@@ -2022,19 +2117,35 @@ function Student({ user, topics = [] }) {
   };
 
   const handleSaveLibraryLink = async () => {
+    if (!assignedTopic) return;
     setLibraryLoading(true);
     setLibraryError('');
     try {
-      const res = await fetch('/api/library-submission', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${user.token}`,
-        },
-        body: JSON.stringify({ thesisId, repositoryLink: libraryLink }),
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
       });
-      if (!res.ok) throw new Error('Αποτυχία αποθήκευσης.');
-      setShowLibraryModal(false);
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const res = await fetch('/api/library-submission', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${user.token}`,
+            },
+            body: JSON.stringify({ thesisId: actualThesisId, repositoryLink: libraryLink }),
+          });
+          if (!res.ok) throw new Error('Αποτυχία αποθήκευσης.');
+          setShowLibraryModal(false);
+        } else {
+          throw new Error('Δεν βρέθηκε διπλωματική που να σας ανήκει.');
+        }
+      } else {
+        throw new Error('Δεν βρέθηκε διπλωματική που να σας ανήκει.');
+      }
     } catch (e) {
       setLibraryError(e.message);
     }
@@ -2042,15 +2153,31 @@ function Student({ user, topics = [] }) {
   };
 
   const handleShowMinutesModal = async () => {
+    if (!assignedTopic) return;
     setShowMinutesModal(true);
     setMinutesLoading(true);
     try {
-      const res = await fetch(`/api/examination-minutes/${thesisId}`, {
-        headers: { Authorization: `Bearer ${user.token}` },
+      // First get the thesis details to find the thesis_id
+      const thesisRes = await fetch(`/api/thesis-details/${assignedTopic.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
       });
-      const html = await res.text();
-      if (!res.ok) throw new Error('Αποτυχία φόρτωσης πρακτικού.');
-      setMinutesContent(html);
+      if (thesisRes.ok) {
+        const thesisData = await thesisRes.json();
+        const actualThesisId = thesisData.debug?.thesis_id;
+        
+        if (actualThesisId) {
+          const res = await fetch(`/api/examination-minutes/${actualThesisId}`, {
+            headers: { Authorization: `Bearer ${user.token}` },
+          });
+          const html = await res.text();
+          if (!res.ok) throw new Error('Αποτυχία φόρτωσης πρακτικού.');
+          setMinutesContent(html);
+        } else {
+          setMinutesContent(`<p style="color:red;">Δεν βρέθηκε διπλωματική που να σας ανήκει.</p>`);
+        }
+      } else {
+        setMinutesContent(`<p style="color:red;">Δεν βρέθηκε διπλωματική που να σας ανήκει.</p>`);
+      }
     } catch (e) {
       setMinutesContent(`<p style="color:red;">${e.message}</p>`);
     }
@@ -2073,35 +2200,35 @@ function Student({ user, topics = [] }) {
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowManage}
-            disabled={!thesisStatus || thesisStatus.trim().toLowerCase() !== "υπό ανάθεση"}
+            disabled={!assignedTopic || (assignedTopic.status && assignedTopic.status.trim().toLowerCase() !== "υπό ανάθεση")}
           >
             Διαχείριση διπλωματικής εργασίας
           </button>
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowDraftModal}
-            disabled={!assignedTopic || !thesisId}
+            disabled={!assignedTopic}
           >
             Πρόχειρη Ανάρτηση
           </button>
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowPresentationModal}
-            disabled={!assignedTopic || !thesisId}
+            disabled={!assignedTopic}
           >
             Λεπτομέρειες Παρουσίασης
           </button>
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowLibraryModal}
-            disabled={!assignedTopic || !thesisId}
+            disabled={!assignedTopic}
           >
             Συνδέσμος Βιβλιοθήκης
           </button>
           <button
             className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
             onClick={handleShowMinutesModal}
-            disabled={!assignedTopic || !thesisId}
+            disabled={!assignedTopic}
           >
             Εξεταστικά Εγγράφα
           </button>
@@ -2631,6 +2758,16 @@ function Admin({ user }) {
   const [templateLoading, setTemplateLoading] = useState(false);
   const [templateError, setTemplateError] = useState("");
 
+  // State for thesis management modals
+  const [showThesisManagementModal, setShowThesisManagementModal] = useState(false);
+  const [selectedThesisForManagement, setSelectedThesisForManagement] = useState(null);
+  const [gsNumber, setGsNumber] = useState("");
+  const [gsYear, setGsYear] = useState("");
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [managementLoading, setManagementLoading] = useState(false);
+  const [managementError, setManagementError] = useState("");
+  const [managementSuccess, setManagementSuccess] = useState("");
+
   // Load theses on component mount
   useEffect(() => {
     if (user) {
@@ -2795,6 +2932,163 @@ function Admin({ user }) {
     setImportLoading(false);
   };
 
+  // Handle thesis management modal
+  const handleShowThesisManagement = async (thesis) => {
+    setSelectedThesisForManagement(thesis);
+    setShowThesisManagementModal(true);
+    setGsNumber("");
+    setGsYear("");
+    setCancellationReason("");
+    setManagementError("");
+    setManagementSuccess("");
+  };
+
+  // Set thesis as active
+  const handleSetActive = async () => {
+    if (!gsNumber || !gsYear) {
+      setManagementError("Συμπληρώστε αριθμό και έτος ΓΣ.");
+      return;
+    }
+
+    setManagementLoading(true);
+    setManagementError("");
+    setManagementSuccess("");
+
+    try {
+      const res = await fetch(`/api/admin/theses/${selectedThesisForManagement.id}/set-active`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ gsNumber, gsYear })
+      });
+
+      if (res.ok) {
+        setManagementSuccess("Η διπλωματική έγινε ενεργή.");
+        // Refresh theses list
+        handleLoadTheses();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setManagementError(err.error || "Αποτυχία ενεργοποίησης.");
+      }
+    } catch {
+      setManagementError("Αποτυχία ενεργοποίησης.");
+    }
+
+    setManagementLoading(false);
+  };
+
+  // Cancel thesis
+  const handleCancelThesis = async () => {
+    if (!gsNumber || !gsYear) {
+      setManagementError("Συμπληρώστε αριθμό και έτος ΓΣ.");
+      return;
+    }
+
+    setManagementLoading(true);
+    setManagementError("");
+    setManagementSuccess("");
+
+    try {
+      const res = await fetch(`/api/admin/theses/${selectedThesisForManagement.id}/cancel`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ 
+          gsNumber, 
+          gsYear, 
+          reason: cancellationReason || "από Γραμματεία" 
+        })
+      });
+
+      if (res.ok) {
+        setManagementSuccess("Η διπλωματική ακυρώθηκε.");
+        // Refresh theses list
+        handleLoadTheses();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setManagementError(err.error || "Αποτυχία ακύρωσης.");
+      }
+    } catch {
+      setManagementError("Αποτυχία ακύρωσης.");
+    }
+
+    setManagementLoading(false);
+  };
+
+  // Handler for the new update GS action
+  const handleUpdateGs = async () => {
+    if (!gsNumber || !gsYear) {
+      setManagementError("Συμπληρώστε αριθμό και έτος ΓΣ.");
+      return;
+    }
+
+    setManagementLoading(true);
+    setManagementError("");
+    setManagementSuccess("");
+
+    try {
+      const res = await fetch(`/api/admin/theses/${selectedThesisForManagement.id}/update-gs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ gsNumber, gsYear })
+      });
+
+      if (res.ok) {
+        setManagementSuccess("Τα στοιχεία ΓΣ ενημερώθηκαν επιτυχώς.");
+        handleLoadTheses(); // Refresh data
+        setTimeout(() => {
+          setShowThesisManagementModal(false);
+        }, 1500);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setManagementError(err.error || "Αποτυχία ενημέρωσης στοιχείων ΓΣ.");
+      }
+    } catch {
+      setManagementError("Αποτυχία ενημέρωσης στοιχείων ΓΣ.");
+    }
+    setManagementLoading(false);
+  };
+
+  // Set thesis as completed
+  const handleSetCompleted = async () => {
+    if (!selectedThesisForManagement) return;
+
+    setManagementLoading(true);
+    setManagementError("");
+    setManagementSuccess("");
+
+    try {
+      const res = await fetch(`/api/admin/theses/${selectedThesisForManagement.id}/set-completed`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        }
+      });
+
+      if (res.ok) {
+        setManagementSuccess("Η διπλωματική τέθηκε επιτυχώς ως 'Περατωμένη'.");
+        handleLoadTheses(); // Refresh data
+        setTimeout(() => {
+          setShowThesisManagementModal(false);
+        }, 2000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setManagementError(err.error || "Αποτυχία αλλαγής κατάστασης.");
+      }
+    } catch {
+      setManagementError("Αποτυχία αλλαγής κατάστασης.");
+    }
+    setManagementLoading(false);
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
@@ -2854,6 +3148,15 @@ function Admin({ user }) {
                         }}
                       >
                         Λεπτομέρειες
+                      </button>
+                      <button
+                        className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded ml-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleShowThesisManagement(thesis);
+                        }}
+                      >
+                        Διαχείριση
                       </button>
                     </div>
                   </div>
@@ -3096,6 +3399,87 @@ function Admin({ user }) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Thesis Management Modal */}
+      {showThesisManagementModal && selectedThesisForManagement && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowThesisManagementModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Διαχείριση Διπλωματικής</h3>
+            
+            <div className="mb-4 p-3 bg-gray-800 rounded">
+              <p className="text-white"><strong>Τίτλος:</strong> {selectedThesisForManagement.title}</p>
+              <p className="text-white"><strong>Φοιτητής:</strong> {selectedThesisForManagement.student_name} {selectedThesisForManagement.student_surname}</p>
+              <p className="text-white"><strong>Κατάσταση:</strong> <span className="font-bold">{selectedThesisForManagement.status}</span></p>
+              {selectedThesisForManagement.gs_number && (
+                <p className="text-white"><strong>Τρέχον ΓΣ:</strong> {selectedThesisForManagement.gs_number}/{selectedThesisForManagement.gs_year}</p>
+              )}
+            </div>
+            
+            {managementLoading && <div className="text-white">Φόρτωση...</div>}
+            {managementError && <div className="text-red-500 mb-4 p-2 bg-red-100 rounded">{managementError}</div>}
+            {managementSuccess && <div className="text-green-500 mb-4 p-2 bg-green-100 rounded">{managementSuccess}</div>}
+            
+            {!managementLoading && !managementSuccess && (
+              <div>
+                {/* --- Shared GS Fields --- */}
+                {((selectedThesisForManagement.status || '').toLowerCase() === 'υπό ανάθεση' || (selectedThesisForManagement.status || '').toLowerCase() === 'ενεργή') && (
+                  <>
+                    <div className="mb-4">
+                      <label className="block mb-2 font-semibold text-white">Αριθμός ΓΣ:</label>
+                      <input type="text" value={gsNumber} onChange={e => setGsNumber(e.target.value)} className="w-full p-2 border rounded bg-[#1f293a] text-white" placeholder="π.χ. 123" required />
+                    </div>
+                    <div className="mb-4">
+                      <label className="block mb-2 font-semibold text-white">Έτος ΓΣ:</label>
+                      <input type="text" value={gsYear} onChange={e => setGsYear(e.target.value)} className="w-full p-2 border rounded bg-[#1f293a] text-white" placeholder="π.χ. 2024" required />
+                    </div>
+                  </>
+                )}
+
+                {/* --- ACTION FOR 'υπό ανάθεση' --- */}
+                {(selectedThesisForManagement.status || '').toLowerCase() === 'υπό ανάθεση' && (
+                  <button className="bg-green-600 text-white px-4 py-2 rounded w-full" onClick={handleSetActive} disabled={managementLoading}>Θέσε ως Ενεργή</button>
+                )}
+
+                {/* --- ACTIONS FOR 'ενεργή' --- */}
+                {(selectedThesisForManagement.status || '').toLowerCase() === 'ενεργή' && (
+                  <div className="space-y-4">
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded w-full" onClick={handleUpdateGs} disabled={managementLoading}>Ενημέρωση Στοιχείων ΓΣ</button>
+                    
+                    <label>Λόγος Ακύρωσης (Απαιτείται):</label>
+                    <div className="border-t border-gray-600 my-4"></div>
+                    
+                    <div className="input-box">
+                      <textarea 
+                        value={cancellationReason} 
+                        onChange={e => setCancellationReason(e.target.value)} 
+                        rows={3}
+                        required
+                      />
+                    </div>
+                    <button className="bg-red-600 text-white px-4 py-2 rounded w-full" onClick={handleCancelThesis} disabled={managementLoading || !cancellationReason.trim()}>Ακύρωση Διπλωματικής</button>
+                  </div>
+                )}
+                
+                {/* --- ACTION FOR 'υπό εξέταση' --- */}
+                {(selectedThesisForManagement.status || '').toLowerCase() === 'υπό εξέταση' && (
+                  <div className="mt-4">
+                    <button 
+                      className="bg-green-600 text-white px-4 py-2 rounded w-full" 
+                      onClick={handleSetCompleted} 
+                      disabled={managementLoading}
+                    >
+                      Θέσε ως Περατωμένη
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <button className="bg-gray-500 text-white px-4 py-2 rounded w-full mt-4" onClick={() => setShowThesisManagementModal(false)} disabled={managementLoading}>Κλείσιμο</button>
           </div>
         </div>
       )}
