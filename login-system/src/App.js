@@ -1578,48 +1578,123 @@ function ThesisList({ user, topics = [], setTopics }) {
   const [statusFilter, setStatusFilter] = useState(""); // Filter by status
   const [roleFilter, setRoleFilter] = useState(""); // Filter by role
 
-  // Filter topics by status and role
-
+  // Debug: log incoming topics
+  console.log("[DEBUG] ThesisList received topics:", topics);
+  console.log("[DEBUG] ThesisList user:", user);
 
   function getUserRole(topic) {
-  if (topic.professor === user.name) return "Επιβλέπων";
-  if (topic.committee && Array.isArray(topic.committee)) {
-    const found = topic.committee.find(
-      m => (m.name + " " + m.surname).trim() === user.name && m.role && m.role.toLowerCase().includes("μέλος")
-    );
-    if (found) return "Μέλος";
+    console.log(`[DEBUG] getUserRole called for topic:`, {
+      id: topic.id,
+      title: topic.title,
+      professor: topic.professor,
+      userName: user.name,
+      committee: topic.committee
+    });
+    
+    // Check if professor is the supervisor (topic creator)
+    if (topic.professor === user.name) {
+      console.log(`[DEBUG] Professor is topic creator for topic ${topic.id}`);
+      return "Επιβλέπων";
+    }
+    
+    // Check if professor is in the committee
+    if (topic.committee && Array.isArray(topic.committee)) {
+      console.log(`[DEBUG] Checking committee for topic ${topic.id}:`, topic.committee);
+      
+      // Find all roles for this professor
+      const roles = topic.committee
+        .filter(m => {
+          const memberName = (m.name + " " + m.surname).trim();
+          // More precise comparison to avoid false matches
+          const match = memberName === user.name || 
+                       (user.name + " " + user.surname).trim() === memberName ||
+                       memberName === user.name + " " + user.surname;
+          console.log(`[DEBUG] Comparing member "${memberName}" with user "${user.name} ${user.surname}": ${match}`);
+          return match;
+        })
+        .map(m => m.role);
+      
+      console.log(`[DEBUG] getUserRole for topic ${topic.id}:`, { 
+        topicProfessor: topic.professor, 
+        userName: user.name, 
+        committee: topic.committee,
+        roles: roles 
+      });
+      
+      if (roles.length > 0) {
+        // If professor has multiple roles, prioritize supervisor role
+        if (roles.includes("Επιβλέπων")) {
+          console.log(`[DEBUG] Returning Επιβλέπων role for topic ${topic.id}`);
+          return "Επιβλέπων";
+        }
+        // For committee members, return "Μέλος" role
+        console.log(`[DEBUG] Returning Μέλος role for topic ${topic.id}`);
+        return "Μέλος";
+      }
+    } else {
+      console.log(`[DEBUG] No committee or committee is not array for topic ${topic.id}:`, topic.committee);
+    }
+    
+    console.log(`[DEBUG] No role found for topic ${topic.id}`);
+    return null;
   }
-  return null;
-}
 
-const filtered = (topics || []).filter(t => {
-  const statusMatch = !statusFilter || ((t.status || "").trim().toLowerCase() === statusFilter.trim().toLowerCase());
-  const userRole = getUserRole(t);
-  let roleMatch = true;
-  if (roleFilter === "Επιβλέπων") roleMatch = userRole === "Επιβλέπων";
-  else if (roleFilter === "Μέλος") roleMatch = userRole === "Μέλος";
-  return statusMatch && roleMatch;
-});
+  // First filter to only show theses where professor is involved
+  const professorTheses = (topics || []).filter(t => {
+    const userRole = getUserRole(t);
+    console.log(`[DEBUG] Filtering topic ${t.id}:`, { title: t.title, userRole });
+    return userRole !== null; // Only show theses where professor has a role
+  });
+
+  console.log("[DEBUG] professorTheses after filtering:", professorTheses.length);
+
+  // Then apply status and role filters
+  const filtered = professorTheses.filter(t => {
+    const statusMatch = !statusFilter || ((t.status || "").trim().toLowerCase() === statusFilter.trim().toLowerCase());
+    const userRole = getUserRole(t);
+    let roleMatch = true;
+    if (roleFilter === "Επιβλέπων") roleMatch = userRole === "Επιβλέπων";
+    else if (roleFilter === "Μέλος") roleMatch = userRole === "Μέλος";
+    
+    console.log(`[DEBUG] Final filtering for topic ${t.id}:`, { 
+      statusMatch, 
+      userRole, 
+      roleMatch, 
+      statusFilter, 
+      roleFilter 
+    });
+    
+    return statusMatch && roleMatch;
+  });
+
+  console.log("[DEBUG] Final filtered theses:", filtered.length);
 
   // Export filtered topics to CSV
   const exportToCSV = () => {
     const headers = ["Title", "Summary", "Status", "Student", "Role"];
-    const rows = filtered.map(t => [t.title, t.summary, t.status || "-", t.assignedStudentName || "-", t.professor === user.name ? "Επιβλέπων" : "Μέλος"]);
+    const rows = filtered.map(t => [
+      t.title, 
+      t.summary, 
+      t.status || "-", 
+      t.assignedStudentName || "-", 
+      getUserRole(t) || "-"
+    ]);
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    saveAs(blob, "thesis_list.csv");
+    saveAs(blob, "my_theses.csv");
   };
 
   // Export filtered topics to JSON
   const exportToJSON = () => {
     const json = JSON.stringify(filtered, null, 2);
     const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
-    saveAs(blob, "thesis_list.json");
+    saveAs(blob, "my_theses.json");
   };
 
   return (
     <div className="p-4 border rounded mt-6">
-      <h3 className="text-lg font-bold mb-2">Προβολή Λίστας Διπλωματικών</h3>
+      <h3 className="text-lg font-bold mb-2">Οι Διπλωματικές μου (ως Επιβλέπων ή Μέλος Τριμελούς)</h3>
+      <p className="text-sm text-gray-400 mb-4">Εμφανίζονται μόνο οι διπλωματικές στις οποίες έχετε εμπλακεί</p>
       {/* Filters and export buttons */}
       <div className="flex space-x-4 mb-4">
         <div className="input-box">
@@ -1643,15 +1718,25 @@ const filtered = (topics || []).filter(t => {
         <button className="bg-[#0ef] text-[#1f293a] px-3 py-1" onClick={exportToJSON}>Εξαγωγή JSON</button>
       </div>
       {/* Render filtered topics */}
-      {filtered.map((topic, idx) => (
-        <div key={topic.id} className="border p-3 mb-2 thesis-list-item">
-          <h4 className="font-bold">{topic.title}</h4>
-          <p>{topic.summary}</p>
-          <p>Κατάσταση: {topic.status || "--"}</p>
-          <p>Φοιτητής: {topic.assignedStudentName || "--"}</p>
-          <p>Ρόλος: {topic.professor === user.name ? "Επιβλέπων" : "Μέλος"}</p>
+      {filtered.length === 0 ? (
+        <div className="text-gray-500 text-center py-4">
+          <span className="text-white">
+            {professorTheses.length === 0 
+              ? "Δεν έχετε εμπλακεί σε καμία διπλωματική εργασία (ως επιβλέπων ή μέλος τριμελούς)." 
+              : "Δεν βρέθηκαν διπλωματικές με τα επιλεγμένα φίλτρα."}
+          </span>
         </div>
-      ))}
+      ) : (
+        filtered.map((topic, idx) => (
+          <div key={topic.id} className="border p-3 mb-2 thesis-list-item">
+            <h4 className="font-bold">{topic.title}</h4>
+            <p>{topic.summary}</p>
+            <p>Κατάσταση: {topic.status || "--"}</p>
+            <p>Φοιτητής: {topic.assignedStudentName || "--"}</p>
+            <p>Ρόλος: {getUserRole(topic) || "--"}</p>
+          </div>
+        ))
+      )}
     </div>
   );
 }
