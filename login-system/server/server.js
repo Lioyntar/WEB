@@ -13,12 +13,6 @@ const app = express();
 // Configure multer for file uploads, files will be stored in 'uploads/' directory
 const upload = multer({ dest: "uploads/" });
 
-// Enable CORS for all routes (allows frontend to call backend)
-app.use(cors());
-
-// Parse incoming JSON requests
-app.use(express.json());
-
 // Serve uploaded files as static with correct Content-Type for PDF
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, filePath) => {
@@ -27,6 +21,21 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     }
   }
 }));
+
+// Serve draft uploads as static (for draft_submissions)
+app.use('/draft_uploads', express.static(path.join(__dirname, 'draft_uploads'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.pdf')) {
+      res.setHeader('Content-Type', 'application/pdf');
+    }
+  }
+}));
+
+// Enable CORS for all routes (allows frontend to call backend)
+app.use(cors());
+
+// Parse incoming JSON requests
+app.use(express.json());
 
 // Database connection configuration
 const dbConfig = {
@@ -142,7 +151,7 @@ app.get("/api/topics", authenticate, async (req, res) => {
   // Select topics, join with professor name, and left join with theses and students for assignment info
   const [rows] = await conn.execute(
     `SELECT t.id, t.title, t.summary, t.professor_id, p.name as professor, t.pdf_file_path,
-            th.student_id, s.student_number, s.name as student_name, th.status
+            th.student_id, s.student_number, s.name as student_name, th.status, th.id as th_id
      FROM thesis_topics t
      JOIN professors p ON t.professor_id = p.id
      LEFT JOIN theses th ON th.topic_id = t.id AND (th.status = 'ενεργή' OR th.status = 'υπό ανάθεση' OR th.status = 'υπό εξέταση')
@@ -157,7 +166,8 @@ app.get("/api/topics", authenticate, async (req, res) => {
     fileName: r.pdf_file_path,
     assignedTo: r.student_number || null,
     assignedStudentName: r.student_name || null,
-    status: r.status || null
+    status: r.status || null,
+    thesis_id: r.th_id || null
   })));
 });
 
@@ -945,5 +955,149 @@ app.post("/api/theses/:id/set-under-examination", authenticate, async (req, res)
   } catch (err) {
     await conn.end();
     res.status(500).json({ error: "Σφάλμα κατά την αλλαγή κατάστασης.", details: err.message });
+  }
+});
+
+// --- DRAFT SUBMISSION ENDPOINTS ---
+const draftUpload = multer({ dest: 'draft_uploads/' });
+
+// POST: Upload or update draft submission (student only)
+app.post('/api/draft-submission', authenticate, draftUpload.single('file'), async (req, res) => {
+  if (req.user.role !== 'Φοιτητής') return res.status(403).json({ error: 'Forbidden' });
+  const { externalLinks } = req.body;
+  let thesisId = Number(req.body.thesisId || req.params.thesisId);
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    const file = req.file;
+    // Αν το thesisId δεν αντιστοιχεί σε διπλωματική του φοιτητή, δοκίμασε ως topicId
+    let [thesisRows] = await conn.execute(
+      'SELECT id FROM theses WHERE id = ? AND student_id = ?',
+      [thesisId, req.user.id]
+    );
+    if (!thesisRows.length) {
+      // Ίσως το thesisId είναι topicId, βρες το thesisId με βάση το topicId και τον φοιτητή
+      const [byTopic] = await conn.execute(
+        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ?',
+        [thesisId, req.user.id]
+      );
+      if (byTopic.length) {
+        thesisId = byTopic[0].id;
+        thesisRows = byTopic;
+      }
+    }
+    if (!thesisRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: 'Δεν βρέθηκε διπλωματική που να σας ανήκει.' });
+    }
+    // Check if already exists
+    const [existing] = await conn.execute(
+      'SELECT id FROM draft_submissions WHERE thesis_id = ? AND student_id = ?',
+      [thesisId, req.user.id]
+    );
+    let filePath = file ? file.filename : null;
+    let links = externalLinks || null;
+    if (existing.length) {
+      // Update
+      let updateSql = 'UPDATE draft_submissions SET ';
+      let params = [];
+      if (filePath) {
+        updateSql += 'file_path = ?, ';
+        params.push(filePath);
+      }
+      updateSql += 'external_links = ?, uploaded_at = NOW() WHERE id = ?';
+      params.push(links, existing[0].id);
+      await conn.execute(updateSql, params);
+    } else {
+      // Insert
+      await conn.execute(
+        'INSERT INTO draft_submissions (thesis_id, student_id, file_path, external_links, uploaded_at) VALUES (?, ?, ?, ?, NOW())',
+        [thesisId, req.user.id, filePath, links]
+      );
+    }
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την αποθήκευση πρόχειρης ανάρτησης', details: err.message });
+  }
+});
+
+// GET: Fetch draft submission for a thesis (student or committee member)
+app.get('/api/draft-submission/:thesisId', authenticate, async (req, res) => {
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    // Επιτρέπεται αν ο χρήστης είναι φοιτητής που ανήκει η διπλωματική ή μέλος επιτροπής
+    let allowed = false;
+    if (req.user.role === 'Φοιτητής') {
+      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ?', [thesisId, req.user.id]);
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Διδάσκων') {
+      // Είναι μέλος επιτροπής ή επιβλέπων;
+      const [rows] = await conn.execute(
+        `SELECT th.id FROM theses th
+         LEFT JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+         WHERE th.id = ? AND (th.supervisor_id = ? OR cm.professor_id = ?)`,
+        [req.user.id, thesisId, req.user.id, req.user.id]
+      );
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Γραμματεία') {
+      allowed = true;
+    }
+    if (!allowed) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα προβολής.' });
+    }
+    const [rows] = await conn.execute(
+      'SELECT id, file_path, external_links, uploaded_at FROM draft_submissions WHERE thesis_id = ? ORDER BY uploaded_at DESC LIMIT 1',
+      [thesisId]
+    );
+    await conn.end();
+    if (!rows.length) return res.json(null);
+    res.json(rows[0]);
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση πρόχειρης ανάρτησης', details: err.message });
+  }
+});
+
+// Get all under examination (υπό εξέταση) theses for a professor (as supervisor or committee member)
+app.get("/api/teacher/under-examination-theses", authenticate, async (req, res) => {
+  if (req.user.role !== "Διδάσκων") return res.status(403).json({ error: "Forbidden" });
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    // Ως επιβλέπων
+    const [asSupervisor] = await conn.execute(
+      `SELECT th.id, th.status, th.topic_id, th.student_id, th.created_at,
+              th.official_assignment_date,
+              s.name as student_name, s.surname as student_surname, s.student_number,
+              t.title
+       FROM theses th
+       JOIN students s ON th.student_id = s.id
+       JOIN thesis_topics t ON th.topic_id = t.id
+       WHERE th.supervisor_id = ? AND th.status = 'υπό εξέταση'`,
+      [req.user.id]
+    );
+    // Ως μέλος επιτροπής
+    const [asMember] = await conn.execute(
+      `SELECT th.id, th.status, th.topic_id, th.student_id, th.created_at,
+              th.official_assignment_date,
+              s.name as student_name, s.surname as student_surname, s.student_number,
+              t.title
+       FROM theses th
+       JOIN students s ON th.student_id = s.id
+       JOIN thesis_topics t ON th.topic_id = t.id
+       JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+       WHERE th.status = 'υπό εξέταση'`,
+      [req.user.id]
+    );
+    // Ενώνω και αφαιρώ διπλότυπα (αν κάποιος είναι και επιβλέπων και μέλος)
+    const map = new Map();
+    [...asSupervisor, ...asMember].forEach(th => map.set(th.id, th));
+    await conn.end();
+    res.json(Array.from(map.values()));
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: "Σφάλμα κατά την ανάκτηση διπλωματικών υπό εξέταση", details: err.message });
   }
 });

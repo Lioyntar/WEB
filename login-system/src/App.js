@@ -196,21 +196,31 @@ function Teacher({ user, topics, setTopics }) {
   const [cancelModal, setCancelModal] = useState({ open: false, thesis: null, gsNumber: "", gsYear: "", error: "", loading: false });
   // --- Add state for active theses ---
   const [activeManageTheses, setActiveManageTheses] = useState([]);
+  // --- Add state for under examination theses ---
+  const [underExaminationTheses, setUnderExaminationTheses] = useState([]);
+  const [underExaminationLoading, setUnderExaminationLoading] = useState(false);
+  const [underExaminationError, setUnderExaminationError] = useState("");
+  const [draftsByThesis, setDraftsByThesis] = useState({});
 
-  // Load theses under assignment for management (and active ones)
+  // Load theses under assignment for management (and active and under examination ones)
   const handleShowManageTheses = async () => {
     setShowManageTheses(true);
     setManageThesesLoading(true);
     setManageThesesError("");
     setManageTheses([]);
     setActiveManageTheses([]);
+    setUnderExaminationTheses([]);
+    setDraftsByThesis({});
     try {
-      // Fetch both in parallel
-      const [resUnder, resActive] = await Promise.all([
+      // Fetch all in parallel
+      const [resUnder, resActive, resExamination] = await Promise.all([
         fetch("/api/teacher/theses-under-assignment", {
           headers: { Authorization: `Bearer ${user.token}` }
         }),
         fetch("/api/teacher/active-theses", {
+          headers: { Authorization: `Bearer ${user.token}` }
+        }),
+        fetch("/api/teacher/under-examination-theses", {
           headers: { Authorization: `Bearer ${user.token}` }
         })
       ]);
@@ -227,17 +237,45 @@ function Teacher({ user, topics, setTopics }) {
         setManageThesesError(prev => prev ? prev + "\n" + "Αποτυχία φόρτωσης ενεργών διπλωματικών." : "Αποτυχία φόρτωσης ενεργών διπλωματικών.");
         ok = false;
       }
+      if (resExamination.ok) {
+        const theses = await resExamination.json();
+        setUnderExaminationTheses(theses);
+        // Fetch drafts for each thesis
+        const drafts = {};
+        await Promise.all(
+          theses.map(async (thesis) => {
+            try {
+              const res = await fetch(`/api/draft-submission/${thesis.id}`, {
+                headers: { Authorization: `Bearer ${user.token}` }
+              });
+              if (res.ok) {
+                drafts[thesis.id] = await res.json();
+              } else {
+                drafts[thesis.id] = null;
+              }
+            } catch {
+              drafts[thesis.id] = null;
+            }
+          })
+        );
+        setDraftsByThesis(drafts);
+      } else {
+        setUnderExaminationError("Αποτυχία φόρτωσης διπλωματικών υπό εξέταση.");
+        ok = false;
+      }
       if (!ok) {
-        // Αν και τα δύο απέτυχαν, καθάρισε τα states
-        if (!resUnder.ok && !resActive.ok) {
+        if (!resUnder.ok && !resActive.ok && !resExamination.ok) {
           setManageTheses([]);
           setActiveManageTheses([]);
+          setUnderExaminationTheses([]);
         }
       }
     } catch {
       setManageThesesError("Αποτυχία φόρτωσης διπλωματικών.");
       setManageTheses([]);
       setActiveManageTheses([]);
+      setUnderExaminationTheses([]);
+      setDraftsByThesis({});
     }
     setManageThesesLoading(false);
   };
@@ -459,7 +497,7 @@ function Teacher({ user, topics, setTopics }) {
             ) : (
               <div>
                 {/* Υπό ανάθεση */}
-                <h4 className="text-lg font-semibold mb-2">Υπό ανάθεση</h4>
+                <h4 className="text-lg font-semibold mb-2">Διαχείριση διπλωματικών υπό ανάθεση</h4>
                 {manageTheses.length === 0 ? (
                   <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν διπλωματικές υπό ανάθεση.</span></div>
                 ) : (
@@ -556,7 +594,7 @@ function Teacher({ user, topics, setTopics }) {
                   ))
                 )}
                 {/* Ενεργές */}
-                <h4 className="text-lg font-semibold mb-2 mt-6">Διαχείριση Ενεργών διπλωματικών</h4>
+                <h4 className="text-lg font-semibold mb-2 mt-6">Διαχείριση ενεργών διπλωματικών</h4>
                 {activeManageTheses.length === 0 ? (
                   <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν ενεργές διπλωματικές</span></div>
                 ) : (
@@ -635,6 +673,70 @@ function Teacher({ user, topics, setTopics }) {
                           Θέσε ως υπό εξέταση
                         </button>
                       )}
+                    </div>
+                  ))
+                )}
+                {/* Υπό εξέταση */}
+                <h4 className="text-lg font-semibold mb-2 mt-6">Διαχείριση διπλωματικών υπό εξέταση</h4>
+                {underExaminationLoading ? (
+                  <div>Φόρτωση...</div>
+                ) : underExaminationError ? (
+                  <div className="text-red-500">{underExaminationError}</div>
+                ) : underExaminationTheses.length === 0 ? (
+                  <div className="text-gray-500"><span className="text-white">Δεν υπάρχουν διπλωματικές υπό εξέταση</span></div>
+                ) : (
+                  underExaminationTheses.map(thesis => (
+                    <div key={thesis.id} className="border p-4 mb-4 rounded bg-[#1f293a]">
+                      <div className="mb-2">
+                        <strong className="text-white">Θέμα:</strong> <span className="text-white">{thesis.title}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Φοιτητής:</strong> <span className="text-white">{thesis.student_name} {thesis.student_surname} ({thesis.student_number})</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Κατάσταση:</strong> <span className="text-white">{thesis.status}</span>
+                      </div>
+                      <div className="mb-2">
+                        <strong className="text-white">Ημ/νία Οριστικής Ανάθεσης:</strong>{" "}
+                        <span className="text-white">
+                          {thesis.official_assignment_date ? new Date(thesis.official_assignment_date).toLocaleDateString("el-GR") : "--"}
+                        </span>
+                      </div>
+                      {/* Draft info */}
+                      <div className="mb-2">
+                        <strong className="text-white">Πρόχειρη ανάρτηση:</strong>
+                        {draftsByThesis[thesis.id] ? (
+                          <div className="mt-2">
+                            {draftsByThesis[thesis.id].file_path && (
+                              <div>
+                                <a
+                                  href={`/draft_uploads/${draftsByThesis[thesis.id].file_path}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 underline"
+                                >
+                                  Λήψη αρχείου
+                                </a>
+                              </div>
+                            )}
+                            {draftsByThesis[thesis.id].external_links && (
+                              <div className="mt-2">
+                                <strong>Σύνδεσμοι:</strong>
+                                <ul className="list-disc ml-6">
+                                  {draftsByThesis[thesis.id].external_links.split(/\r?\n/).map((link, i) => link.trim() && (
+                                    <li key={i}>
+                                      <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{link}</a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            <div className="text-xs mt-2" style={{ color: "#fff" }}>Ανέβηκε: {draftsByThesis[thesis.id].uploaded_at && new Date(draftsByThesis[thesis.id].uploaded_at).toLocaleString("el-GR")}</div>
+                          </div>
+                        ) : (
+                          <span className="text-white ml-2">Δεν έχει αναρτηθεί πρόχειρο αρχείο.</span>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -792,6 +894,7 @@ function ThesisList({ user, topics = [], setTopics }) {
             <option value="">Όλες οι καταστάσεις</option>
             <option value="υπό ανάθεση">Υπό Ανάθεση</option>
             <option value="ενεργή">Ενεργή</option>
+            <option value="υπό εξέταση">Υπό Εξέταση</option>
             <option value="περατωμένη">Περατωμένη</option>
             <option value="ακυρωμένη">Ακυρωμένη</option>
           </select>
@@ -860,7 +963,7 @@ function TopicManagement({ user, topics = [], setTopics }) {
       body: JSON.stringify({ [field]: value })
     });
     if (res.ok) {
-      setTopics(topics.map(topic => topic.id === id ? { ...topic, [field]: value } : topic));
+      setTopics(topics => topics.map(topic => topic.id === id ? { ...topic, [field]: value } : topic));
     }
   };
 
@@ -872,7 +975,7 @@ function TopicManagement({ user, topics = [], setTopics }) {
       headers: { Authorization: `Bearer ${user.token}` }
     });
     if (res.ok) {
-      setTopics(topics.filter(topic => topic.id !== id));
+      setTopics(topics => topics.filter(topic => topic.id !== id));
     }
   };
 
@@ -1076,6 +1179,15 @@ function Student({ user, topics = [] }) {
   const [profResults, setProfResults] = useState([]);
   const [manageError, setManageError] = useState("");
 
+  // State for draft modal
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [draftFile, setDraftFile] = useState(null);
+  const [draftLinks, setDraftLinks] = useState("");
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const [draftInfo, setDraftInfo] = useState(null);
+
+
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
@@ -1085,7 +1197,12 @@ function Student({ user, topics = [] }) {
         headers: { Authorization: `Bearer ${user.token}` }
       });
       if (res.ok) {
-        setDetails(await res.json());
+        const data = await res.json();
+        // Αν υπάρχει thesis, πρόσθεσε το thesis_id στο αντικείμενο details
+        if (data && data.debug && data.debug.thesis_id) {
+          data.thesis_id = data.debug.thesis_id;
+        }
+        setDetails(data);
       } else {
         setDetails({ error: "Αποτυχία φόρτωσης λεπτομερειών." });
       }
@@ -1161,10 +1278,19 @@ function Student({ user, topics = [] }) {
   // Βρες το θέμα που έχει ανατεθεί στον φοιτητή (αν υπάρχει)
   const assignedTopic = (topics || []).find(t => t.assignedTo === user.username);
 
-  // Βρες λεπτομέρειες για το θέμα που έχει ανατεθεί (αν υπάρχουν)
-  // (details μπορεί να είναι null αν δεν έχει πατηθεί "Προβολή θέματος")
-  // Αν δεν υπάρχουν details, χρησιμοποίησε assignedTopic για το id και status
-  const thesisId = details?.id || assignedTopic?.id;
+  // Βρες το id της διπλωματικής (thesis) με ασφαλή τρόπο
+  let thesisId = null;
+  if (details && details.debug && details.debug.thesis_id) {
+    thesisId = details.debug.thesis_id;
+  } else if (details && details.thesis_id) {
+    thesisId = details.thesis_id;
+  } else if (details && details.id) {
+    thesisId = details.id;
+  } else if (assignedTopic && assignedTopic.thesis_id) {
+    thesisId = assignedTopic.thesis_id;
+  } else if (assignedTopic && assignedTopic.id) {
+    thesisId = assignedTopic.id;
+  }
   const thesisStatus = details?.status || assignedTopic?.status;
 
   // Άνοιγμα modal διαχείρισης
@@ -1240,6 +1366,61 @@ function Student({ user, topics = [] }) {
   // Υπολογισμός αποδεκτών προσκλήσεων
   const acceptedCount = committeeInvitations.filter(inv => inv.status === "Αποδεκτή").length;
 
+  // Fetch draft info when modal opens
+  const handleShowDraftModal = async () => {
+    setShowDraftModal(true);
+    setDraftLoading(true);
+    setDraftError("");
+    setDraftInfo(null);
+    try {
+      const res = await fetch(`/api/draft-submission/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        setDraftInfo(await res.json());
+      } else {
+        setDraftInfo(null);
+      }
+    } catch {
+      setDraftInfo(null);
+    }
+    setDraftLoading(false);
+  };
+
+  // Upload draft
+  const handleDraftUpload = async (e) => {
+    e.preventDefault();
+    if (!thesisId) return;
+    setDraftLoading(true);
+    setDraftError("");
+    try {
+      const formData = new FormData();
+      formData.append("thesisId", thesisId);
+      if (draftFile) formData.append("file", draftFile);
+      formData.append("externalLinks", draftLinks);
+      const res = await fetch("/api/draft-submission", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${user.token}` },
+        body: formData
+      });
+      if (res.ok) {
+        // Refresh info
+        const infoRes = await fetch(`/api/draft-submission/${thesisId}`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        setDraftInfo(await infoRes.json());
+        setDraftFile(null);
+        setDraftLinks("");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setDraftError((err.error || "Αποτυχία ανάρτησης.") + (err.details ? `: ${err.details}` : ""));
+      }
+    } catch {
+      setDraftError("Αποτυχία ανάρτησης.");
+    }
+    setDraftLoading(false);
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
@@ -1252,13 +1433,22 @@ function Student({ user, topics = [] }) {
       </button>
       {/* Κουμπί διαχείρισης διπλωματικής */}
       {assignedTopic && (
-        <button
-          className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
-          onClick={handleShowManage}
-          disabled={!thesisStatus || thesisStatus.trim().toLowerCase() !== "υπό ανάθεση"}
-        >
-          Διαχείριση διπλωματικής εργασίας
-        </button>
+        <>
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+            onClick={handleShowManage}
+            disabled={!thesisStatus || thesisStatus.trim().toLowerCase() !== "υπό ανάθεση"}
+          >
+            Διαχείριση διπλωματικής εργασίας
+          </button>
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+            onClick={handleShowDraftModal}
+            disabled={!assignedTopic || !thesisId}
+          >
+            Πρόχειρη Ανάρτηση
+          </button>
+        </>
       )}
       {assignedTopics.length === 0 && (
         <div className="text-white">Δεν σας έχει ανατεθεί διπλωματική εργασία.</div>
@@ -1280,6 +1470,7 @@ function Student({ user, topics = [] }) {
       {showDetails && (
         <div
           className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+
           style={{ zIndex: 1000 }}
         >
           <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
@@ -1526,6 +1717,66 @@ function Student({ user, topics = [] }) {
         </div>
     </div>
 )}
+      {/* Modal πρόχειρης ανάρτησης */}
+      {showDraftModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowDraftModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Πρόχειρη Ανάρτηση Διπλωματικής</h3>
+            {draftLoading && <div>Φόρτωση...</div>}
+            {draftError && <div className="text-red-500">{draftError}</div>}
+            {!draftLoading && (
+              <form onSubmit={handleDraftUpload}>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Ανέβασμα αρχείου (PDF):</label>
+                  <input type="file" accept="application/pdf" onChange={e => setDraftFile(e.target.files[0])} />
+                </div>
+                <label>Σύνδεσμοι προς υλικό (π.χ. Google Drive, YouTube):</label>
+                <div className="mb-4 input-box">
+                  <textarea
+                    rows={3}
+                    value={draftLinks}
+                    onChange={e => setDraftLinks(e.target.value)}
+                    placeholder="Ένας ή περισσότεροι σύνδεσμοι, διαχωρισμένοι με enter"
+                  />
+                </div>
+                <button className="bg-[#0ef] text-[#1f293a] px-4 py-2" type="submit" disabled={draftLoading}>Ανάρτηση</button>
+              </form>
+            )}
+            {/* Εμφάνιση υπάρχουσας ανάρτησης */}
+            {draftInfo && (
+              <div className="mt-6">
+                <h4 className="font-semibold mb-2">Τελευταία ανάρτηση:</h4>
+                {draftInfo.file_path && (
+                  <div>
+                    <a
+                      href={`/draft_uploads/${draftInfo.file_path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      Λήψη αρχείου
+                    </a>
+                  </div>
+                )}
+                {draftInfo.external_links && (
+                  <div className="mt-2">
+                    <strong>Σύνδεσμοι:</strong>
+                    <ul className="list-disc ml-6">
+                      {draftInfo.external_links.split(/\r?\n/).map((link, i) => link.trim() && (
+                        <li key={i}>
+                          <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{link}</a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div className="text-xs mt-2" style={{ color: "#fff" }}>Ανέβηκε: {draftInfo.uploaded_at && new Date(draftInfo.uploaded_at).toLocaleString("el-GR")}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
