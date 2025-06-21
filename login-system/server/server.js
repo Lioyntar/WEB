@@ -159,7 +159,7 @@ app.get("/api/topics", authenticate, async (req, res) => {
     const conn = await mysql.createConnection(dbConfig);
     
     if (req.user.role === "Φοιτητής") {
-      // For students, get their assigned theses
+      // For students, get their assigned theses (exclude cancelled)
       const [studentTheses] = await conn.execute(`
         SELECT 
           tt.id, 
@@ -175,7 +175,8 @@ app.get("/api/topics", authenticate, async (req, res) => {
         INNER JOIN thesis_topics tt ON t.topic_id = tt.id
         INNER JOIN professors p ON tt.professor_id = p.id
         INNER JOIN students s ON t.student_id = s.id
-        WHERE t.student_id = ?
+        WHERE t.student_id = ? AND t.status != 'ακυρωμένη'
+        ORDER BY t.created_at DESC
       `, [req.user.id]);
       
       console.log(`[DEBUG] studentTheses for student ${req.user.id}:`, studentTheses.length);
@@ -748,15 +749,15 @@ app.post("/api/thesis-invitations-by-topic/:topicId/invite", authenticate, async
   const conn = await mysql.createConnection(dbConfig);
 
   try {
-    // Βρες τη διπλωματική του φοιτητή για αυτό το θέμα
+    // Βρες τη διπλωματική του φοιτητή για αυτό το θέμα (exclude cancelled)
     const [thesisRows] = await conn.execute(
-      "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+      "SELECT id FROM theses WHERE topic_id = ? AND student_id = ? AND status != 'ακυρωμένη' ORDER BY created_at DESC LIMIT 1",
       [topicId, req.user.id]
     );
     
     if (thesisRows.length === 0) {
       await conn.end();
-      return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+      return res.status(404).json({ error: "Δεν βρέθηκε ενεργή διπλωματική που να σας ανήκει." });
     }
     
     const thesisId = thesisRows[0].id;
@@ -1327,13 +1328,13 @@ app.post('/api/draft-submission', authenticate, draftUpload.single('file'), asyn
     const file = req.file;
     // Αν το thesisId δεν αντιστοιχεί σε διπλωματική του φοιτητή, δοκίμασε ως topicId
     let [thesisRows] = await conn.execute(
-      'SELECT id FROM theses WHERE id = ? AND student_id = ?',
+      'SELECT id FROM theses WHERE id = ? AND student_id = ? AND status != "ακυρωμένη"',
       [thesisId, req.user.id]
     );
     if (!thesisRows.length) {
       // Ίσως το thesisId είναι topicId, βρες το thesisId με βάση το topicId και τον φοιτητή
       const [byTopic] = await conn.execute(
-        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ?',
+        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ? AND status != "ακυρωμένη" ORDER BY created_at DESC LIMIT 1',
         [thesisId, req.user.id]
       );
       if (byTopic.length) {
@@ -1386,7 +1387,7 @@ app.get('/api/draft-submission/:thesisId', authenticate, async (req, res) => {
     // Επιτρέπεται αν ο χρήστης είναι φοιτητής που ανήκει η διπλωματική ή μέλος επιτροπής
     let allowed = false;
     if (req.user.role === 'Φοιτητής') {
-      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ?', [thesisId, req.user.id]);
+      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ? AND status != "ακυρωμένη"', [thesisId, req.user.id]);
       allowed = rows.length > 0;
     } else if (req.user.role === 'Διδάσκων') {
       // Είναι μέλος επιτροπής ή επιβλέπων;
@@ -1489,7 +1490,7 @@ app.get('/api/presentation-details/:thesisId', authenticate, async (req, res) =>
     // Επιτρέπεται αν ο χρήστης είναι φοιτητής που ανήκει η διπλωματική ή μέλος επιτροπής
     let allowed = false;
     if (req.user.role === 'Φοιτητής') {
-      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ?', [thesisId, req.user.id]);
+      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ? AND status != "ακυρωμένη"', [thesisId, req.user.id]);
       allowed = rows.length > 0;
     } else if (req.user.role === 'Διδάσκων') {
       // Είναι μέλος επιτροπής ή επιβλέπων
@@ -1583,13 +1584,13 @@ app.post('/api/presentation-details', authenticate, async (req, res) => {
     // Check if thesis belongs to student
     let actualThesisId = Number(thesisId);
     const [thesisRows] = await conn.execute(
-      'SELECT id FROM theses WHERE id = ? AND student_id = ?',
+      'SELECT id FROM theses WHERE id = ? AND student_id = ? AND status != "ακυρωμένη"',
       [actualThesisId, req.user.id]
     );
     if (!thesisRows.length) {
       // Maybe thesisId is topicId, find thesisId based on topicId and student
       const [byTopic] = await conn.execute(
-        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ?',
+        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ? AND status != "ακυρωμένη" ORDER BY created_at DESC LIMIT 1',
         [actualThesisId, req.user.id]
       );
       if (byTopic.length) {
@@ -1597,7 +1598,7 @@ app.post('/api/presentation-details', authenticate, async (req, res) => {
         console.log('Found thesis by topic_id:', actualThesisId);
       } else {
         await conn.end();
-        return res.status(404).json({ error: 'Δεν βρέθηκε διπλωματική που να σας ανήκει.' });
+        return res.status(404).json({ error: 'Δεν βρέθηκε ενεργή διπλωματική που να σας ανήκει.' });
       }
     }
 
