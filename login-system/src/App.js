@@ -1430,106 +1430,128 @@ function Teacher({ user, topics, setTopics }) {
             {gradesError && <div className="text-red-500 mb-4">{gradesError}</div>}
             {!gradesLoading && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* My Grade Form */}
-                <div>
-                  <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Η Βαθμολόγησή μου</h4>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block mb-2 text-white">
-                        Ποιότητα Δ.Ε. και βαθμός εκπλήρωσης στόχων (60%):
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        value={myGrade.quality}
-                        onChange={e => handleCriteriaChange('quality', e.target.value)}
-                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block mb-2 text-white">
-                        Χρονικό διάστημα εκπόνησης (15%):
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        value={myGrade.timeline}
-                        onChange={e => handleCriteriaChange('timeline', e.target.value)}
-                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block mb-2 text-white">
-                        Ποιότητα και πληρότητα κειμένου (15%):
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        value={myGrade.completeness}
-                        onChange={e => handleCriteriaChange('completeness', e.target.value)}
-                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block mb-2 text-white">
-                        Συνολική εικόνα παρουσίασης (10%):
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                        value={myGrade.presentation}
-                        onChange={e => handleCriteriaChange('presentation', e.target.value)}
-                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
-                      />
-                    </div>
-                    <div className="p-3 bg-gray-800 rounded">
-                      <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {totalGrade}/10</p>
-                    </div>
-                    <button
-                      className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded w-full"
-                      onClick={handleSaveGrade}
-                      disabled={gradesLoading}
-                    >
-                      {gradesLoading ? "Αποθήκευση..." : "Αποθήκευση Βαθμού"}
-                    </button>
-                  </div>
-                </div>
-                
-                {/* All Grades Display */}
-                <div>
-                  <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Όλοι οι Βαθμοί</h4>
-                  {grades.length === 0 ? (
-                    <p className="text-white">Δεν έχουν καταχωρηθεί βαθμοί ακόμα.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {grades.map(grade => (
-                        <div key={grade.id} className="border p-3 rounded bg-gray-800">
-                          <p className="text-white font-semibold">
-                            {grade.name} {grade.surname}
-                          </p>
-                          <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {grade.grade}/10</p>
-                          <div className="text-sm text-gray-300 mt-2">
-                            <p><strong>Ποιότητα:</strong> {grade.criteria.quality}/10 (60%)</p>
-                            <p><strong>Χρονικό Διάστημα:</strong> {grade.criteria.timeline}/10 (15%)</p>
-                            <p><strong>Πληρότητα:</strong> {grade.criteria.completeness}/10 (15%)</p>
-                            <p><strong>Παρουσίαση:</strong> {grade.criteria.presentation}/10 (10%)</p>
-                          </div>
-                          <p className="text-xs text-gray-400 mt-2">
-                            Καταχωρήθηκε: {new Date(grade.created_at).toLocaleString("el-GR")}
-                          </p>
+                {/* Check if user is committee member and supervisor hasn't graded yet */}
+                {(() => {
+                  const isSupervisor = grades.some(g => g.professor_id === user.id && g.name && g.surname);
+                  const supervisorGrade = grades.find(g => g.name && g.surname && g.professor_id !== user.id);
+                  const isCommitteeMember = !isSupervisor && grades.length > 0;
+                  
+                  if (isCommitteeMember && !supervisorGrade) {
+                    return (
+                      <div className="col-span-2">
+                        <div className="bg-yellow-600 text-white p-4 rounded mb-4">
+                          <h4 className="font-semibold mb-2">Περιμένετε τον επιβλέπων καθηγητή</h4>
+                          <p>Πρέπει πρώτα να βαθμολογήσει ο επιβλέπων καθηγητής πριν μπορέσετε να βαθμολογήσετε.</p>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      {/* My Grade Form */}
+                      <div>
+                        <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Η Βαθμολόγησή μου</h4>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block mb-2 text-white">
+                              Ποιότητα Δ.Ε. και βαθμός εκπλήρωσης στόχων (60%):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.1"
+                              value={myGrade.quality}
+                              onChange={e => handleCriteriaChange('quality', e.target.value)}
+                              className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block mb-2 text-white">
+                              Χρονικό διάστημα εκπόνησης (15%):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.1"
+                              value={myGrade.timeline}
+                              onChange={e => handleCriteriaChange('timeline', e.target.value)}
+                              className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block mb-2 text-white">
+                              Ποιότητα και πληρότητα κειμένου (15%):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.1"
+                              value={myGrade.completeness}
+                              onChange={e => handleCriteriaChange('completeness', e.target.value)}
+                              className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block mb-2 text-white">
+                              Συνολική εικόνα παρουσίασης (10%):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.1"
+                              value={myGrade.presentation}
+                              onChange={e => handleCriteriaChange('presentation', e.target.value)}
+                              className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                            />
+                          </div>
+                          <div className="p-3 bg-gray-800 rounded">
+                            <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {totalGrade}/10</p>
+                          </div>
+                          <button
+                            className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded w-full"
+                            onClick={handleSaveGrade}
+                            disabled={gradesLoading}
+                          >
+                            {gradesLoading ? "Αποθήκευση..." : "Αποθήκευση Βαθμού"}
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* All Grades Display */}
+                      <div>
+                        <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Όλοι οι Βαθμοί</h4>
+                        {grades.length === 0 ? (
+                          <p className="text-white">Δεν έχουν καταχωρηθεί βαθμοί ακόμα.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {grades.map(grade => (
+                              <div key={grade.id} className="border p-3 rounded bg-gray-800">
+                                <p className="text-white font-semibold">
+                                  {grade.name} {grade.surname}
+                                </p>
+                                <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {grade.grade}/10</p>
+                                <div className="text-sm text-gray-300 mt-2">
+                                  <p><strong>Ποιότητα:</strong> {grade.criteria.quality}/10 (60%)</p>
+                                  <p><strong>Χρονικό Διάστημα:</strong> {grade.criteria.timeline}/10 (15%)</p>
+                                  <p><strong>Πληρότητα:</strong> {grade.criteria.completeness}/10 (15%)</p>
+                                  <p><strong>Παρουσίαση:</strong> {grade.criteria.presentation}/10 (10%)</p>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-2">
+                                  Καταχωρήθηκε: {new Date(grade.created_at).toLocaleString("el-GR")}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -3713,7 +3735,7 @@ function Admin({ user }) {
         
         {showThesesList && (
           <div className="mt-4">
-            <p className="text-white mb-4">Προβάλλονται όλες οι Διπλωματικες Εργασιες.</p>
+            <p className="text-white mb-4">Προβάλλονται μόνο οι ενεργές και υπό εξέταση διπλωματικές εργασίες.</p>
             
             
             {loading && <div className="text-white">Φόρτωση...</div>}

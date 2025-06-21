@@ -1875,6 +1875,19 @@ app.post('/api/grades/:thesisId', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
     }
     
+    // NEW: Check if supervisor has graded first (only for committee members)
+    if (isCommitteeMember && !isSupervisor) {
+      const [supervisorGrade] = await conn.execute(
+        'SELECT id FROM grades WHERE thesis_id = ? AND professor_id = ?',
+        [thesisId, thesisRows[0].supervisor_id]
+      );
+      
+      if (supervisorGrade.length === 0) {
+        await conn.end();
+        return res.status(400).json({ error: 'Πρέπει πρώτα να βαθμολογήσει ο επιβλέπων καθηγητής πριν μπορέσετε να βαθμολογήσετε.' });
+      }
+    }
+    
     // Check if grades table exists, create if not
     try {
       await conn.execute('SELECT 1 FROM grades LIMIT 1');
@@ -2172,7 +2185,7 @@ app.get('/api/admin/theses', authenticate, async (req, res) => {
   const conn = await mysql.createConnection(dbConfig);
   
   try {
-    // Get all theses with status 'ενεργή' or 'υπό εξέταση'
+    // Get only theses with status 'ενεργή' or 'υπό εξέταση'
     const [thesisRows] = await conn.execute(
       `SELECT th.id, th.status, th.official_assignment_date, th.created_at, th.supervisor_id,
               s.name as student_name, s.surname as student_surname, s.student_number,
@@ -2182,6 +2195,7 @@ app.get('/api/admin/theses', authenticate, async (req, res) => {
        JOIN students s ON th.student_id = s.id
        JOIN thesis_topics t ON th.topic_id = t.id
        JOIN professors p ON th.supervisor_id = p.id
+       WHERE th.status IN ('ενεργή', 'υπό εξέταση')
        ORDER BY th.created_at DESC`
     );
     
@@ -3004,10 +3018,27 @@ ${committeeListText}
         
 Μετά της έγκριση, ο εισηγητής κ. ${thesis.supervisor_name || ''} ${thesis.supervisor_surname || ''}, προτείνει στα μέλη της Τριμελούς Επιτροπής, να απονεμηθεί στο/στη φοιτητή/τρια κ. ${thesis.student_name} ${thesis.student_surname} ο βαθμός ${thesis.final_grade}.
 
-Τα μέλη της Τριμελούς Επιτροπής, απονέμουν την παρακάτω βαθμολογία:
-<RATING_TABLE>
+Τα μέλη της Τριμελούς Επιτροπής, απονέμουν την παρακάτω βαθμολογία:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>ΟΝΟΜΑΤΕΠΩΝΥΜΟ</th>
+                    <th>ΙΔΙΟΤΗΤΑ</th>
+                    <th>ΒΑΘΜΟΣ</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${committee.map(m => `
+                <tr>
+                    <td>${m.name} ${m.surname}</td>
+                    <td>${m.role}</td>
+                    <td>${m.grade}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
 
-Μετά την έγκριση και την απονομή του βαθμού ${thesis.final_grade}, η Τριμελής Επιτροπή, προτείνει να προχωρήσει στην διαδικασία για να ανακηρύξει τον κ. ${thesis.student_name} ${thesis.student_surname}, σε διπλωματούχο του Προγράμματος Σπουδών του «ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ ΠΑΝΕΠΙΣΤΗΜΙΟΥ ΠΑΤΡΩΝ» και να του απονέμει το Δίπλωμα Μηχανικού Η/Υ το οποίο αναγνωρίζεται ως Ενιαίος Τίτλος Σπουδών Μεταπτυχιακού Επιπέδου.`;
+        <p>Μετά την έγκριση και την απονομή του βαθμού <span class="dotted">${thesis.final_grade}</span>, η Τριμελής Επιτροπή, προτείνει να προχωρήσει στην διαδικασία για να ανακηρύξει τον κ. <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span>, σε διπλωματούχο του Προγράμματος Σπουδών του «ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ ΠΑΝΕΠΙΣΤΗΜΙΟΥ ΠΑΤΡΩΝ» και να του απονέμει το Δίπλωμα Μηχανικού Η/Υ το οποίο αναγνωρίζεται ως Ενιαίος Τίτλος Σπουδών Μεταπτυχιακού Επιπέδου.`;
         
         // Construct the final ratings table separately for better formatting control
         const ratingsHeader = `ΟΝΟΜΑΤΕΠΩΝΥΜΟ`.padEnd(35) + `ΙΔΙΟΤΗΤΑ`.padEnd(20) + `ΒΑΘΜΟΣ\n`;
