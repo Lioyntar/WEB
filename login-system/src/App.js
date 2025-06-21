@@ -3,6 +3,29 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "r
 import { saveAs } from "file-saver"; // For file downloads (CSV/JSON)
 import './App.css';
 
+// Helper function for secure file download with Authorization header
+async function downloadFileWithAuth(url, filename, token) {
+  try {
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined
+    });
+    if (!response.ok) {
+      alert("Το αρχείο δεν βρέθηκε στον server.");
+      return;
+    }
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch {
+    alert("Αποτυχία λήψης αρχείου από τον server.");
+  }
+}
 // Main App component
 function App() {
   const [user, setUser] = useState(null); // Holds the logged-in user object
@@ -911,10 +934,17 @@ function Teacher({ user, topics, setTopics }) {
                             {draftsByThesis[thesis.id].file_path && (
                               <div>
                                 <a
-                                  href={`/draft_uploads/${draftsByThesis[thesis.id].file_path}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
                                   className="text-blue-600 underline"
+  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "white" }}
+  onClick={async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await downloadFileWithAuth(
+      `/draft_uploads/${draftsByThesis[thesis.id].file_path}`,
+      draftsByThesis[thesis.id].file_path.endsWith('.pdf') ? draftsByThesis[thesis.id].file_path : "draft.pdf",
+      user.token
+    );
+  }}
                                 >
                                   Λήψη αρχείου
                                 </a>
@@ -2374,10 +2404,17 @@ function Student({ user, topics = [] }) {
                 {draftInfo.file_path && (
                   <div>
                     <a
-                      href={`/draft_uploads/${draftInfo.file_path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 underline"
+                        className="text-blue-600 underline"
+  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "white" }}
+  onClick={async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await downloadFileWithAuth(
+      `/draft_uploads/${draftInfo.file_path}`,
+      draftInfo.file_path.endsWith('.pdf') ? draftInfo.file_path : "draft.pdf",
+      user.token
+    );
+  }}
                     >
                       Λήψη αρχείου
                     </a>
