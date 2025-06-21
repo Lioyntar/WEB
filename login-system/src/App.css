@@ -545,3 +545,80 @@ h2, h3, h4, p, .input-box, button {
   z-index: 1001;
 }
 
+/* Presentation Details Form Styles */
+.presentation-form input[type="date"],
+.presentation-form input[type="time"],
+.presentation-form input[type="text"],
+.presentation-form select {
+  width: 100%;
+  height: 45px;
+  background: transparent;
+  border: 2px solid #0ef;
+  outline: none;
+  border-radius: 40px;
+  font-size: 1em;
+  color: #fff;
+  padding: 0 20px;
+  transition: .5s ease;
+}
+
+.presentation-form input[type="date"]:focus,
+.presentation-form input[type="time"]:focus,
+.presentation-form input[type="text"]:focus,
+.presentation-form select:focus {
+  border-color: #0ef;
+}
+
+.presentation-form select option {
+  background: #1f293a;
+  color: #fff;
+  padding: 10px;
+}
+
+/* Modal form styles */
+.modal-content input[type="date"],
+.modal-content input[type="time"],
+.modal-content input[type="text"],
+.modal-content select {
+  background: #1f293a;
+  color: #fff;
+  border: 2px solid #0ef;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modal-content input[type="date"]:focus,
+.modal-content input[type="time"]:focus,
+.modal-content input[type="text"]:focus,
+.modal-content select:focus {
+  border-color: #0ef;
+  outline: none;
+  box-shadow: 0 0 5px rgba(14, 239, 255, 0.3);
+}
+
+.modal-content select option {
+  background: #1f293a;
+  color: #fff;
+  padding: 8px;
+}
+
+.modal-content label {
+  color: #fff;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.modal-content .bg-gray-100 {
+  background: #2c4766 !important;
+  border: 1px solid #0ef;
+}
+
+.modal-content .bg-gray-100 p {
+  color: #fff;
+  margin: 4px 0;
+}
+

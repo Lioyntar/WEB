@@ -201,6 +201,13 @@ function Teacher({ user, topics, setTopics }) {
   const [underExaminationLoading, setUnderExaminationLoading] = useState(false);
   const [underExaminationError, setUnderExaminationError] = useState("");
   const [draftsByThesis, setDraftsByThesis] = useState({});
+  
+  // --- Add state for announcement text modal ---
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [selectedThesisForAnnouncement, setSelectedThesisForAnnouncement] = useState(null);
+  const [announcementText, setAnnouncementText] = useState("");
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
+  const [announcementError, setAnnouncementError] = useState("");
 
   // Load theses under assignment for management (and active and under examination ones)
   const handleShowManageTheses = async () => {
@@ -419,6 +426,65 @@ function Teacher({ user, topics, setTopics }) {
       setCancelModal(modal => ({ ...modal, error: "Αποτυχία ακύρωσης." }));
     }
     setCancelModal(modal => ({ ...modal, loading: false }));
+  };
+
+  // Handle announcement text modal
+  const handleShowAnnouncementModal = async (thesis) => {
+    setSelectedThesisForAnnouncement(thesis);
+    setShowAnnouncementModal(true);
+    setAnnouncementLoading(true);
+    setAnnouncementError("");
+    setAnnouncementText("");
+    
+    try {
+      const res = await fetch(`/api/announcement-text/${thesis.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setAnnouncementText(data.announcement_text || "");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setAnnouncementError(err.error || "Αποτυχία φόρτωσης κειμένου ανακοίνωσης.");
+      }
+    } catch {
+      setAnnouncementError("Αποτυχία φόρτωσης κειμένου ανακοίνωσης.");
+    }
+    
+    setAnnouncementLoading(false);
+  };
+
+  // Save announcement text
+  const handleSaveAnnouncement = async () => {
+    if (!selectedThesisForAnnouncement) return;
+    
+    setAnnouncementLoading(true);
+    setAnnouncementError("");
+    
+    try {
+      const res = await fetch(`/api/announcement-text/${selectedThesisForAnnouncement.id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ announcement_text: announcementText })
+      });
+      
+      if (res.ok) {
+        setShowAnnouncementModal(false);
+        // Refresh the theses data to show updated announcement text
+        handleShowManageTheses();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setAnnouncementError(err.error || "Αποτυχία αποθήκευσης κειμένου ανακοίνωσης.");
+      }
+    } catch {
+      setAnnouncementError("Αποτυχία αποθήκευσης κειμένου ανακοίνωσης.");
+    }
+    
+    setAnnouncementLoading(false);
   };
 
   return (
@@ -704,7 +770,7 @@ function Teacher({ user, topics, setTopics }) {
                       </div>
                       {/* Draft info */}
                       <div className="mb-2">
-                        <strong className="text-white">Πρόχειρη ανάρτηση:</strong>
+                        <strong style={{ color: "#0ef" }}>Πρόχειρη ανάρτηση:</strong>
                         {draftsByThesis[thesis.id] ? (
                           <div className="mt-2">
                             {draftsByThesis[thesis.id].file_path && (
@@ -721,7 +787,7 @@ function Teacher({ user, topics, setTopics }) {
                             )}
                             {draftsByThesis[thesis.id].external_links && (
                               <div className="mt-2">
-                                <strong>Σύνδεσμοι:</strong>
+                                <strong style={{ color: "#0ef" }}>Σύνδεσμοι:</strong>
                                 <ul className="list-disc ml-6">
                                   {draftsByThesis[thesis.id].external_links.split(/\r?\n/).map((link, i) => link.trim() && (
                                     <li key={i}>
@@ -737,6 +803,28 @@ function Teacher({ user, topics, setTopics }) {
                           <span className="text-white ml-2">Δεν έχει αναρτηθεί πρόχειρο αρχείο.</span>
                         )}
                       </div>
+                      {/* Presentation Details */}
+                      <div className="mb-2">
+                        <strong style={{ color: "#0ef" }}>Λεπτομέρειες Παρουσίασης:</strong>
+                        {thesis.presentation_details ? (
+                          <div className="mt-2 p-3 bg-gray-800 rounded">
+                            <p className="text-white"><strong>Ημερομηνία & Ώρα:</strong> {new Date(thesis.presentation_details.presentation_date).toLocaleString("el-GR")}</p>
+                            <p className="text-white"><strong>Τρόπος:</strong> {thesis.presentation_details.mode}</p>
+                            <p className="text-white"><strong>Τόπος/Σύνδεσμος:</strong> {thesis.presentation_details.location_or_link}</p>
+                          </div>
+                        ) : (
+                          <span className="text-white ml-2">Δεν έχουν καταχωρηθεί λεπτομέρειες παρουσίασης.</span>
+                        )}
+                      </div>
+                      {/* Announcement Text Button - only show if presentation details exist */}
+                      {thesis.presentation_details && (
+                        <button
+                          className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded mt-2"
+                          onClick={() => handleShowAnnouncementModal(thesis)}
+                        >
+                          Κείμενο Ανακοίνωσης Παρουσίασης
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -847,6 +935,55 @@ function Teacher({ user, topics, setTopics }) {
                   </div>
                 )}
               </>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Announcement Text Modal */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowAnnouncementModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Κείμενο Ανακοίνωσης Παρουσίασης</h3>
+            {selectedThesisForAnnouncement && (
+              <div className="mb-4">
+                <p className="text-white"><strong>Διπλωματική:</strong> {selectedThesisForAnnouncement.title}</p>
+                <p className="text-white"><strong>Φοιτητής:</strong> {selectedThesisForAnnouncement.student_name} {selectedThesisForAnnouncement.student_surname}</p>
+              </div>
+            )}
+            {announcementLoading && <div>Φόρτωση...</div>}
+            {announcementError && <div className="text-red-500 mb-4">{announcementError}</div>}
+            {!announcementLoading && (
+              <div>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold" style={{ color: "#0ef" }}>Κείμενο Ανακοίνωσης:</label>
+                  <div className="input-box">
+                    <textarea
+                      value={announcementText}
+                      onChange={e => setAnnouncementText(e.target.value)}
+                      rows={10}
+                      placeholder="Γράψτε το κείμενο της ανακοίνωσης για την παρουσίαση της διπλωματικής..."
+                    />
+                  </div>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded"
+                    onClick={handleSaveAnnouncement}
+                    disabled={announcementLoading}
+                  >
+                    {announcementLoading ? "Αποθήκευση..." : "Αποθήκευση"}
+                  </button>
+                  <button
+                    className="bg-gray-500 text-white px-4 py-2 rounded"
+                    onClick={() => setShowAnnouncementModal(false)}
+                    disabled={announcementLoading}
+                  >
+                    Ακύρωση
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1187,6 +1324,15 @@ function Student({ user, topics = [] }) {
   const [draftError, setDraftError] = useState("");
   const [draftInfo, setDraftInfo] = useState(null);
 
+  // State for presentation details modal
+  const [showPresentationModal, setShowPresentationModal] = useState(false);
+  const [presentationDate, setPresentationDate] = useState("");
+  const [presentationTime, setPresentationTime] = useState("");
+  const [presentationMode, setPresentationMode] = useState("");
+  const [presentationLocation, setPresentationLocation] = useState("");
+  const [presentationLoading, setPresentationLoading] = useState(false);
+  const [presentationError, setPresentationError] = useState("");
+  const [presentationInfo, setPresentationInfo] = useState(null);
 
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
@@ -1203,6 +1349,22 @@ function Student({ user, topics = [] }) {
           data.thesis_id = data.debug.thesis_id;
         }
         setDetails(data);
+        
+        // Also fetch presentation details if we have a thesis_id
+        const thesisId = data.thesis_id || data.id;
+        if (thesisId) {
+          try {
+            const presRes = await fetch(`/api/presentation-details/${thesisId}`, {
+              headers: { Authorization: `Bearer ${user.token}` }
+            });
+            if (presRes.ok) {
+              const presData = await presRes.json();
+              setPresentationInfo(presData);
+            }
+          } catch {
+            // Ignore presentation details errors
+          }
+        }
       } else {
         setDetails({ error: "Αποτυχία φόρτωσης λεπτομερειών." });
       }
@@ -1313,7 +1475,6 @@ function Student({ user, topics = [] }) {
     }
     setManageLoading(false);
   };
-
   // Αναζήτηση διδάσκοντα με email
   const handleProfSearch = async () => {
     setManageError("");
@@ -1421,6 +1582,104 @@ function Student({ user, topics = [] }) {
     setDraftLoading(false);
   };
 
+  // Fetch presentation details when modal opens
+  const handleShowPresentationModal = async () => {
+    setShowPresentationModal(true);
+    setPresentationLoading(true);
+    setPresentationError("");
+    setPresentationInfo(null);
+    setPresentationDate("");
+    setPresentationTime("");
+    setPresentationMode("");
+    setPresentationLocation("");
+    try {
+      const res = await fetch(`/api/presentation-details/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          setPresentationInfo(data);
+          // Parse the presentation date and time
+          const dateTime = new Date(data.presentation_date);
+          setPresentationDate(dateTime.toISOString().split('T')[0]);
+          setPresentationTime(dateTime.toTimeString().slice(0, 5));
+          setPresentationMode(data.mode);
+          setPresentationLocation(data.location_or_link);
+        }
+      } else {
+        setPresentationInfo(null);
+      }
+    } catch {
+      setPresentationInfo(null);
+    }
+    setPresentationLoading(false);
+  };
+
+  // Save presentation details
+  const handleSavePresentation = async (e) => {
+    e.preventDefault();
+    if (!thesisId) return;
+    if (!presentationDate || !presentationTime || !presentationMode || !presentationLocation) {
+      setPresentationError("Συμπληρώστε όλα τα πεδία.");
+      return;
+    }
+    
+    // Validate that the presentation date is in the future
+    const presentationDateTime = new Date(`${presentationDate}T${presentationTime}:00`);
+    const now = new Date();
+    if (presentationDateTime <= now) {
+      setPresentationError("Η ημερομηνία και ώρα παρουσίασης πρέπει να είναι στο μέλλον.");
+      return;
+    }
+    
+    setPresentationLoading(true);
+    setPresentationError("");
+    try {
+      // Create proper ISO datetime string for backend
+      const presentationDateTimeString = `${presentationDate}T${presentationTime}:00`;
+      
+      const res = await fetch("/api/presentation-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({
+          thesisId,
+          presentationDate: presentationDateTimeString,
+          mode: presentationMode,
+          locationOrLink: presentationLocation
+        })
+      });
+      
+      if (res.ok) {
+        // Refresh info
+        const infoRes = await fetch(`/api/presentation-details/${thesisId}`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        const data = await infoRes.json();
+        if (data) {
+          setPresentationInfo(data);
+          const dateTime = new Date(data.presentation_date);
+          setPresentationDate(dateTime.toISOString().split('T')[0]);
+          setPresentationTime(dateTime.toTimeString().slice(0, 5));
+          setPresentationMode(data.mode);
+          setPresentationLocation(data.location_or_link);
+        }
+        // Close modal on success
+        setShowPresentationModal(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setPresentationError(err.error || err.details || "Αποτυχία αποθήκευσης.");
+      }
+    } catch (err) {
+      console.error('Presentation save error:', err);
+      setPresentationError("Αποτυχία αποθήκευσης.");
+    }
+    setPresentationLoading(false);
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
@@ -1447,6 +1706,13 @@ function Student({ user, topics = [] }) {
             disabled={!assignedTopic || !thesisId}
           >
             Πρόχειρη Ανάρτηση
+          </button>
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+            onClick={handleShowPresentationModal}
+            disabled={!assignedTopic || !thesisId}
+          >
+            Λεπτομέρειες Παρουσίασης
           </button>
         </>
       )}
@@ -1548,6 +1814,19 @@ function Student({ user, topics = [] }) {
                       </ul>
                     ) : (
                       <span className="fade-in-committee"> Δεν έχουν οριστεί μέλη.</span>
+                    )}
+                  </div>
+                  {/* Presentation Details */}
+                  <div className="mb-2">
+                    <strong style={{ color: "#0ef" }}>Λεπτομέρειες Παρουσίασης:</strong>
+                    {presentationInfo ? (
+                      <div className="mt-2 p-3 bg-gray-100 rounded">
+                        <p><strong>Ημερομηνία & Ώρα:</strong> {new Date(presentationInfo.presentation_date).toLocaleString("el-GR")}</p>
+                        <p><strong>Τρόπος:</strong> {presentationInfo.mode}</p>
+                        <p><strong>Τόπος/Σύνδεσμος:</strong> {presentationInfo.location_or_link}</p>
+                      </div>
+                    ) : (
+                      <span className="ml-2">Δεν έχουν καταχωρηθεί λεπτομέρειες παρουσίασης.</span>
                     )}
                   </div>
                 </div>
@@ -1761,7 +2040,7 @@ function Student({ user, topics = [] }) {
                 )}
                 {draftInfo.external_links && (
                   <div className="mt-2">
-                    <strong>Σύνδεσμοι:</strong>
+                    <strong style={{ color: "#0ef" }}>Σύνδεσμοι:</strong>
                     <ul className="list-disc ml-6">
                       {draftInfo.external_links.split(/\r?\n/).map((link, i) => link.trim() && (
                         <li key={i}>
@@ -1777,6 +2056,88 @@ function Student({ user, topics = [] }) {
           </div>
         </div>
       )}
+      {/* Presentation Details Modal */}
+      {showPresentationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowPresentationModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Λεπτομέρειες Παρουσίασης</h3>
+            {presentationLoading && <div>Φόρτωση...</div>}
+            {presentationError && <div className="text-red-500">{presentationError}</div>}
+            {!presentationLoading && (
+              <form onSubmit={handleSavePresentation}>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Ημερομηνία Παρουσίασης:</label>
+                  <input
+                    type="date"
+                    value={presentationDate}
+                    onChange={e => setPresentationDate(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Ώρα Παρουσίασης:</label>
+                  <input
+                    type="time"
+                    value={presentationTime}
+                    onChange={e => setPresentationTime(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Τρόπος Παρουσίασης:</label>
+                  <select
+                    value={presentationMode}
+                    onChange={e => setPresentationMode(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="">-- Επιλογή --</option>
+                    <option value="δια ζώσης">Δια ζώσης</option>
+                    <option value="διαδικτυακά">Διαδικτυακά</option>
+                  </select>
+                </div>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">
+                    {presentationMode === "δια ζώσης" ? "Αίθουσα Εξέτασης:" : 
+                     presentationMode === "διαδικτυακά" ? "Σύνδεσμος Σύνδεσης:" : 
+                     "Αίθουσα/Σύνδεσμος:"}
+                  </label>
+                  <input
+                    type="text"
+                    value={presentationLocation}
+                    onChange={e => setPresentationLocation(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    placeholder={presentationMode === "δια ζώσης" ? "π.χ. Αίθουσα 101" : 
+                                 presentationMode === "διαδικτυακά" ? "π.χ. https://meet.google.com/..." : 
+                                 "Εισάγετε αίθουσα ή σύνδεσμο"}
+                    required
+                  />
+                </div>
+                <button 
+                  className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded w-full" 
+                  type="submit" 
+                  disabled={presentationLoading}
+                >
+                  {presentationLoading ? "Αποθήκευση..." : "Αποθήκευση"}
+                </button>
+              </form>
+            )}
+            {/* Εμφάνιση υπάρχουσας παρουσίασης */}
+            {presentationInfo && (
+              <div className="mt-6 p-4 bg-gray-100 rounded">
+                <h4 className="font-semibold mb-2">Τελευταία καταχώρηση:</h4>
+                <p><strong>Ημερομηνία & Ώρα:</strong> {new Date(presentationInfo.presentation_date).toLocaleString("el-GR")}</p>
+                <p><strong>Τρόπος:</strong> {presentationInfo.mode}</p>
+                <p><strong>Τόπος/Σύνδεσμος:</strong> {presentationInfo.location_or_link}</p>
+                <p className="text-xs mt-2">Ενημερώθηκε: {new Date(presentationInfo.created_at).toLocaleString("el-GR")}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1787,3 +2148,4 @@ function Admin() {
 }
 
 export default App;
+

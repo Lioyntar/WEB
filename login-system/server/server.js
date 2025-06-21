@@ -1094,10 +1094,296 @@ app.get("/api/teacher/under-examination-theses", authenticate, async (req, res) 
     // Ενώνω και αφαιρώ διπλότυπα (αν κάποιος είναι και επιβλέπων και μέλος)
     const map = new Map();
     [...asSupervisor, ...asMember].forEach(th => map.set(th.id, th));
+    
+    // Fetch presentation details for each thesis
+    const results = [];
+    for (const thesis of map.values()) {
+      let presentationDetails = null;
+      try {
+        const [presRows] = await conn.execute(
+          'SELECT presentation_date, mode, location_or_link, announcement_text FROM presentation_details WHERE thesis_id = ? ORDER BY created_at DESC LIMIT 1',
+          [thesis.id]
+        );
+        presentationDetails = presRows.length > 0 ? presRows[0] : null;
+      } catch (tableErr) {
+        // Table doesn't exist, presentationDetails remains null
+        console.log('presentation_details table not found, skipping...');
+      }
+      results.push({
+        ...thesis,
+        presentation_details: presentationDetails
+      });
+    }
+    
     await conn.end();
-    res.json(Array.from(map.values()));
+    res.json(results);
   } catch (err) {
     await conn.end();
     res.status(500).json({ error: "Σφάλμα κατά την ανάκτηση διπλωματικών υπό εξέταση", details: err.message });
+  }
+});
+
+// --- PRESENTATION DETAILS ENDPOINTS ---
+
+// GET: Fetch presentation details for a thesis (student or committee member)
+app.get('/api/presentation-details/:thesisId', authenticate, async (req, res) => {
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    // Επιτρέπεται αν ο χρήστης είναι φοιτητής που ανήκει η διπλωματική ή μέλος επιτροπής
+    let allowed = false;
+    if (req.user.role === 'Φοιτητής') {
+      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ?', [thesisId, req.user.id]);
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Διδάσκων') {
+      // Είναι μέλος επιτροπής ή επιβλέπων
+      const [rows] = await conn.execute(
+        `SELECT th.id FROM theses th
+         LEFT JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+         WHERE th.id = ? AND (th.supervisor_id = ? OR cm.professor_id = ?)`,
+        [req.user.id, thesisId, req.user.id, req.user.id]
+      );
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Γραμματεία') {
+      allowed = true;
+    }
+    if (!allowed) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα προβολής.' });
+    }
+    
+    // Check if presentation_details table exists
+    try {
+      await conn.execute('SELECT 1 FROM presentation_details LIMIT 1');
+    } catch (tableErr) {
+      await conn.end();
+      return res.json(null); // Table doesn't exist, return null
+    }
+    
+    const [rows] = await conn.execute(
+      'SELECT id, presentation_date, mode, location_or_link, created_at FROM presentation_details WHERE thesis_id = ? ORDER BY created_at DESC LIMIT 1',
+      [thesisId]
+    );
+    await conn.end();
+    if (!rows.length) return res.json(null);
+    res.json(rows[0]);
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση λεπτομερειών παρουσίασης', details: err.message });
+  }
+});
+
+// POST: Create or update presentation details (student only)
+app.post('/api/presentation-details', authenticate, async (req, res) => {
+  if (req.user.role !== 'Φοιτητής') return res.status(403).json({ error: 'Forbidden' });
+  const { thesisId, presentationDate, mode, locationOrLink } = req.body;
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    console.log('Presentation details request:', { thesisId, presentationDate, mode, locationOrLink });
+    
+    // Validate input
+    if (!thesisId || !presentationDate || !mode || !locationOrLink) {
+      return res.status(400).json({ error: 'Όλα τα πεδία είναι υποχρεωτικά.' });
+    }
+    
+    // Validate mode
+    if (!['δια ζώσης', 'διαδικτυακά'].includes(mode)) {
+      return res.status(400).json({ error: 'Μη έγκυρος τρόπος παρουσίασης.' });
+    }
+
+    // Check if presentation_details table exists, create if not
+    try {
+      await conn.execute('SELECT 1 FROM presentation_details LIMIT 1');
+    } catch (tableErr) {
+      console.log('Creating presentation_details table...');
+      await conn.execute(`
+        CREATE TABLE presentation_details (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          thesis_id INT NOT NULL,
+          presentation_date DATETIME NOT NULL,
+          mode VARCHAR(20) NOT NULL,
+          location_or_link TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (thesis_id) REFERENCES theses(id) ON DELETE CASCADE
+        )
+      `);
+    }
+
+    // Convert ISO date format to MySQL datetime format
+    let mysqlDateTime;
+    try {
+      const date = new Date(presentationDate);
+      if (isNaN(date.getTime())) {
+        return res.status(400).json({ error: 'Μη έγκυρη ημερομηνία.' });
+      }
+      // Format as YYYY-MM-DD HH:MM:SS for MySQL
+      mysqlDateTime = date.toISOString().slice(0, 19).replace('T', ' ');
+      console.log('Converted datetime:', mysqlDateTime);
+    } catch (err) {
+      console.error('Date conversion error:', err);
+      return res.status(400).json({ error: 'Μη έγκυρη μορφή ημερομηνίας.' });
+    }
+
+    // Check if thesis belongs to student
+    let actualThesisId = Number(thesisId);
+    const [thesisRows] = await conn.execute(
+      'SELECT id FROM theses WHERE id = ? AND student_id = ?',
+      [actualThesisId, req.user.id]
+    );
+    if (!thesisRows.length) {
+      // Maybe thesisId is topicId, find thesisId based on topicId and student
+      const [byTopic] = await conn.execute(
+        'SELECT id FROM theses WHERE topic_id = ? AND student_id = ?',
+        [actualThesisId, req.user.id]
+      );
+      if (byTopic.length) {
+        actualThesisId = byTopic[0].id;
+        console.log('Found thesis by topic_id:', actualThesisId);
+      } else {
+        await conn.end();
+        return res.status(404).json({ error: 'Δεν βρέθηκε διπλωματική που να σας ανήκει.' });
+      }
+    }
+
+    console.log('Using thesis_id:', actualThesisId);
+
+    // Check if already exists
+    const [existing] = await conn.execute(
+      'SELECT id FROM presentation_details WHERE thesis_id = ?',
+      [actualThesisId]
+    );
+
+    if (existing.length) {
+      // Update
+      console.log('Updating existing presentation details');
+      await conn.execute(
+        'UPDATE presentation_details SET presentation_date = ?, mode = ?, location_or_link = ?, created_at = NOW() WHERE thesis_id = ?',
+        [mysqlDateTime, mode, locationOrLink, actualThesisId]
+      );
+    } else {
+      // Insert
+      console.log('Inserting new presentation details');
+      await conn.execute(
+        'INSERT INTO presentation_details (thesis_id, presentation_date, mode, location_or_link, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [actualThesisId, mysqlDateTime, mode, locationOrLink]
+      );
+    }
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    console.error('Presentation details error:', err);
+    res.status(500).json({ error: 'Σφάλμα κατά την αποθήκευση λεπτομερειών παρουσίασης', details: err.message });
+  }
+});
+
+// GET: Fetch announcement text for a thesis (supervisor only)
+app.get('/api/announcement-text/:thesisId', authenticate, async (req, res) => {
+  if (req.user.role !== 'Διδάσκων') return res.status(403).json({ error: 'Forbidden' });
+  
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    // Check if professor is supervisor of this thesis
+    const [thesisRows] = await conn.execute(
+      'SELECT id FROM theses WHERE id = ? AND supervisor_id = ?',
+      [thesisId, req.user.id]
+    );
+    
+    console.log('Thesis check result:', thesisRows);
+    
+    if (!thesisRows.length) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
+    }
+    
+    // Check if announcement_text column exists, add if not
+    try {
+      await conn.execute('SELECT announcement_text FROM presentation_details LIMIT 1');
+    } catch (colErr) {
+      console.log('Adding announcement_text column...');
+      await conn.execute('ALTER TABLE presentation_details ADD COLUMN announcement_text TEXT');
+    }
+    
+    // Check if presentation details exist
+    const [presRows] = await conn.execute(
+      'SELECT announcement_text FROM presentation_details WHERE thesis_id = ? ORDER BY created_at DESC LIMIT 1',
+      [thesisId]
+    );
+    
+    console.log('Presentation details check result:', presRows);
+    
+    if (!presRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: 'Δεν βρέθηκαν λεπτομέρειες παρουσίασης.' });
+    }
+    
+    res.json({ announcement_text: presRows[0].announcement_text || '' });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση κειμένου ανακοίνωσης', details: err.message });
+  }
+});
+
+// POST: Update announcement text for a thesis (supervisor only)
+app.post('/api/announcement-text/:thesisId', authenticate, async (req, res) => {
+  if (req.user.role !== 'Διδάσκων') return res.status(403).json({ error: 'Forbidden' });
+  
+  const thesisId = req.params.thesisId;
+  const { announcement_text } = req.body;
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    console.log('Announcement text request:', { thesisId, announcement_text, userId: req.user.id });
+    
+    // Check if professor is supervisor of this thesis
+    const [thesisRows] = await conn.execute(
+      'SELECT id FROM theses WHERE id = ? AND supervisor_id = ?',
+      [thesisId, req.user.id]
+    );
+    
+    console.log('Thesis check result:', thesisRows);
+    
+    if (!thesisRows.length) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
+    }
+    
+    // Check if presentation details exist
+    const [presRows] = await conn.execute(
+      'SELECT id FROM presentation_details WHERE thesis_id = ? ORDER BY created_at DESC LIMIT 1',
+      [thesisId]
+    );
+    
+    console.log('Presentation details check result:', presRows);
+    
+    if (!presRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: 'Δεν βρέθηκαν λεπτομέρειες παρουσίασης.' });
+    }
+    
+    // Check if announcement_text column exists, add if not
+    try {
+      await conn.execute('SELECT announcement_text FROM presentation_details LIMIT 1');
+    } catch (colErr) {
+      console.log('Adding announcement_text column...');
+      await conn.execute('ALTER TABLE presentation_details ADD COLUMN announcement_text TEXT');
+    }
+    
+    // Update announcement text
+    const [updateResult] = await conn.execute(
+      'UPDATE presentation_details SET announcement_text = ? WHERE thesis_id = ?',
+      [announcement_text || '', thesisId]
+    );
+    
+    console.log('Update result:', updateResult);
+    
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Announcement text error:', err);
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την αποθήκευση κειμένου ανακοίνωσης', details: err.message });
   }
 });
