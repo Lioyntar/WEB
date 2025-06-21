@@ -406,13 +406,35 @@ app.post("/api/topics/:id/assign", authenticate, async (req, res) => {
   const { id } = req.params; // Get topic id from URL
   const { studentId } = req.body; // Get student id from request
   const conn = await mysql.createConnection(dbConfig); // Connect to DB
-  // Insert assignment into theses table with status 'υπό ανάθεση'
-  await conn.execute(
-    "INSERT INTO theses (student_id, topic_id, supervisor_id, status, created_at) VALUES (?, ?, ?, 'υπό ανάθεση', NOW())",
-    [studentId, id, req.user.id]
-  );
-  // Return success
-  res.json({ success: true });
+  
+  try {
+    // Check if student already has an active thesis (not cancelled)
+    const [existingTheses] = await conn.execute(
+      "SELECT id, status FROM theses WHERE student_id = ? AND status != 'ακυρωμένη'",
+      [studentId]
+    );
+    
+    if (existingTheses.length > 0) {
+      await conn.end();
+      return res.status(400).json({ 
+        error: "Ο φοιτητής έχει ήδη μια ενεργή διπλωματική εργασία. Δεν μπορεί να λάβει νέα ανάθεση." 
+      });
+    }
+    
+    // Insert assignment into theses table with status 'υπό ανάθεση'
+    await conn.execute(
+      "INSERT INTO theses (student_id, topic_id, supervisor_id, status, created_at) VALUES (?, ?, ?, 'υπό ανάθεση', NOW())",
+      [studentId, id, req.user.id]
+    );
+    
+    await conn.end();
+    // Return success
+    res.json({ success: true });
+  } catch (err) {
+    await conn.end();
+    console.error("Error assigning topic:", err);
+    res.status(500).json({ error: "Σφάλμα κατά την ανάθεση του θέματος.", details: err.message });
+  }
 });
 
 // Unassign a topic from a student (professor only)
@@ -481,7 +503,8 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
     const [thesisRows] = await conn.execute(
       `SELECT th.id, th.status, th.official_assignment_date, th.supervisor_id
        FROM theses th
-       WHERE th.topic_id = ? AND th.student_id = ? LIMIT 1`,
+       WHERE th.topic_id = ? AND th.student_id = ? AND th.status != 'ακυρωμένη'
+       ORDER BY th.created_at DESC LIMIT 1`,
       [topicId, req.user.id]
     );
     if (thesisRows.length > 0) {
@@ -489,14 +512,15 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
       debug.thesis_id = thesis.id; // Add thesis_id to debug info
     } else {
       // Debug: log if not found
-      console.log("No thesis found for student_id", req.user.id, "and topic_id", topicId);
+      console.log("No active thesis found for student_id", req.user.id, "and topic_id", topicId);
     }
   } else {
-    // Για άλλους ρόλους, φέρε απλά την πρώτη διπλωματική με αυτό το θέμα
+    // Για άλλους ρόλους, φέρε απλά την πρώτη ενεργή διπλωματική με αυτό το θέμα
     const [thesisRows] = await conn.execute(
       `SELECT th.id, th.status, th.official_assignment_date, th.supervisor_id
        FROM theses th
-       WHERE th.topic_id = ? LIMIT 1`,
+       WHERE th.topic_id = ? AND th.status != 'ακυρωμένη'
+       ORDER BY th.created_at DESC LIMIT 1`,
       [topicId]
     );
     if (thesisRows.length > 0) thesis = thesisRows[0];
@@ -586,15 +610,15 @@ app.get("/api/thesis-invitations-by-topic/:topicId", authenticate, async (req, r
   const topicId = req.params.topicId;
   const conn = await mysql.createConnection(dbConfig);
 
-  // Βρες πρώτα τη διπλωματική του φοιτητή για αυτό το θέμα
+  // Βρες τη διπλωματική του φοιτητή για αυτό το θέμα
   const [thesisRows] = await conn.execute(
-    "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+    "SELECT id FROM theses WHERE topic_id = ? AND student_id = ? AND status != 'ακυρωμένη' ORDER BY created_at DESC LIMIT 1",
     [topicId, req.user.id]
   );
 
   if (!thesisRows.length) {
     await conn.end();
-    return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+    return res.status(404).json({ error: "Δεν βρέθηκε ενεργή διπλωματική που να σας ανήκει." });
   }
 
   const thesisId = thesisRows[0].id;
@@ -794,23 +818,23 @@ app.post("/api/thesis-invitations/:thesisId/invite", authenticate, async (req, r
     if (req.user.role === "Φοιτητής") {
       // Βρες αν ο φοιτητής έχει διπλωματική με το συγκεκριμένο θέμα (topic_id)
       const [rows] = await conn.execute(
-        "SELECT id FROM theses WHERE topic_id = ? AND student_id = ?",
+        "SELECT id FROM theses WHERE topic_id = ? AND student_id = ? AND status != 'ακυρωμένη' ORDER BY created_at DESC LIMIT 1",
         [thesisId, req.user.id]
       );
       if (rows.length === 0) {
         await conn.end();
-        return res.status(404).json({ error: "Δεν βρέθηκε διπλωματική που να σας ανήκει." });
+        return res.status(404).json({ error: "Δεν βρέθηκε ενεργή διπλωματική που να σας ανήκει." });
       }
       thesisRow = rows[0];
     } else {
       // Για άλλους ρόλους (π.χ. admin), απλά έλεγξε αν υπάρχει η διπλωματική με id = thesisId
       const [rows] = await conn.execute(
-        "SELECT id FROM theses WHERE id = ?",
+        "SELECT id FROM theses WHERE id = ? AND status != 'ακυρωμένη'",
         [thesisId]
       );
       if (rows.length === 0) {
         await conn.end();
-        return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε." });
+        return res.status(404).json({ error: "Η διπλωματική δεν βρέθηκε ή είναι ακυρωμένη." });
       }
       thesisRow = rows[0];
     }
