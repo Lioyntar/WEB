@@ -1293,11 +1293,27 @@ function ThesisList({ user, topics = [], setTopics }) {
   const [roleFilter, setRoleFilter] = useState(""); // Filter by role
 
   // Filter topics by status and role
-  const filtered = (topics || []).filter(t => {
-    const roleMatch = !roleFilter || t.professor === user.name;
-    const statusMatch = !statusFilter || t.status === statusFilter;
-    return roleMatch && statusMatch;
-  });
+
+
+  function getUserRole(topic) {
+  if (topic.professor === user.name) return "Επιβλέπων";
+  if (topic.committee && Array.isArray(topic.committee)) {
+    const found = topic.committee.find(
+      m => (m.name + " " + m.surname).trim() === user.name && m.role && m.role.toLowerCase().includes("μέλος")
+    );
+    if (found) return "Μέλος";
+  }
+  return null;
+}
+
+const filtered = (topics || []).filter(t => {
+  const statusMatch = !statusFilter || ((t.status || "").trim().toLowerCase() === statusFilter.trim().toLowerCase());
+  const userRole = getUserRole(t);
+  let roleMatch = true;
+  if (roleFilter === "Επιβλέπων") roleMatch = userRole === "Επιβλέπων";
+  else if (roleFilter === "Μέλος") roleMatch = userRole === "Μέλος";
+  return statusMatch && roleMatch;
+});
 
   // Export filtered topics to CSV
   const exportToCSV = () => {
