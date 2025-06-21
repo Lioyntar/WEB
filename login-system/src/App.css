@@ -398,6 +398,23 @@ h2, h3, h4, p, .input-box, button {
     padding: 20px;
     opacity: 0;
     animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    scrollbar-width: thin;
+    scrollbar-color: #0ef #232b3b;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 10px;
+    background: #232b3b;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #0ef;
+    border-radius: 8px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: #09bcd4;
 }
 
 .fixed {

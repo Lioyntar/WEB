@@ -208,6 +208,20 @@ function Teacher({ user, topics, setTopics }) {
   const [announcementText, setAnnouncementText] = useState("");
   const [announcementLoading, setAnnouncementLoading] = useState(false);
   const [announcementError, setAnnouncementError] = useState("");
+  
+  // --- Add state for grades modal ---
+  const [showGradesModal, setShowGradesModal] = useState(false);
+  const [selectedThesisForGrades, setSelectedThesisForGrades] = useState(null);
+  const [grades, setGrades] = useState([]);
+  const [gradesLoading, setGradesLoading] = useState(false);
+  const [gradesError, setGradesError] = useState("");
+  const [myGrade, setMyGrade] = useState({
+    quality: 0,
+    timeline: 0,
+    completeness: 0,
+    presentation: 0
+  });
+  const [totalGrade, setTotalGrade] = useState(0);
 
   // Load theses under assignment for management (and active and under examination ones)
   const handleShowManageTheses = async () => {
@@ -487,6 +501,127 @@ function Teacher({ user, topics, setTopics }) {
     setAnnouncementLoading(false);
   };
 
+  // Handle grades modal
+  const handleShowGradesModal = async (thesis) => {
+    console.log('Opening grades modal for thesis:', thesis);
+    console.log('Current user object:', user);
+    console.log('User ID type:', typeof user.id, 'User ID value:', user.id);
+    console.log('Thesis ID type:', typeof thesis.id, 'Thesis ID value:', thesis.id);
+    console.log('Full thesis object:', JSON.stringify(thesis, null, 2));
+    
+    setSelectedThesisForGrades(thesis);
+    setShowGradesModal(true);
+    setGradesLoading(true);
+    setGradesError("");
+    setGrades([]);
+    setMyGrade({
+      quality: 0,
+      timeline: 0,
+      completeness: 0,
+      presentation: 0
+    });
+    setTotalGrade(0);
+    
+    try {
+      console.log('Fetching grades for thesis:', thesis.id, 'User ID:', user.id);
+      const res = await fetch(`/api/grades/${thesis.id}`, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      
+      console.log('Grades response status:', res.status);
+      
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Grades data received:', data);
+        setGrades(data);
+        
+        // Find my grade if exists
+        const myGradeData = data.find(g => g.professor_id === user.id);
+        console.log('My grade data:', myGradeData);
+        if (myGradeData) {
+          setMyGrade(myGradeData.criteria);
+          setTotalGrade(myGradeData.grade);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error('Grades fetch error:', err);
+        setGradesError(err.error || err.details || "Αποτυχία φόρτωσης βαθμών.");
+      }
+    } catch (error) {
+      console.error('Grades fetch exception:', error);
+      setGradesError("Αποτυχία φόρτωσης βαθμών.");
+    }
+    
+    setGradesLoading(false);
+  };
+
+  // Calculate total grade based on criteria
+  const calculateTotalGrade = (criteria) => {
+    const quality = parseFloat(criteria.quality) || 0;
+    const timeline = parseFloat(criteria.timeline) || 0;
+    const completeness = parseFloat(criteria.completeness) || 0;
+    const presentation = parseFloat(criteria.presentation) || 0;
+    
+    // Apply weights according to regulations
+    const weightedGrade = (quality * 0.60) + (timeline * 0.15) + (completeness * 0.15) + (presentation * 0.10);
+    return Math.round(weightedGrade * 100) / 100; // Round to 2 decimal places
+  };
+
+  // Handle criteria change
+  const handleCriteriaChange = (criterion, value) => {
+    const newCriteria = { ...myGrade, [criterion]: parseFloat(value) || 0 };
+    setMyGrade(newCriteria);
+    setTotalGrade(calculateTotalGrade(newCriteria));
+  };
+
+  // Save grade
+  const handleSaveGrade = async () => {
+    if (!selectedThesisForGrades) return;
+    
+    setGradesLoading(true);
+    setGradesError("");
+    
+    try {
+      console.log('Saving grade for thesis:', selectedThesisForGrades.id, 'User ID:', user.id);
+      console.log('Grade data:', { grade: totalGrade, criteria: myGrade });
+      
+      const res = await fetch(`/api/grades/${selectedThesisForGrades.id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ 
+          grade: totalGrade,
+          criteria: myGrade
+        })
+      });
+      
+      console.log('Save grade response status:', res.status);
+      
+      if (res.ok) {
+        // Refresh grades
+        const refreshRes = await fetch(`/api/grades/${selectedThesisForGrades.id}`, {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        
+        if (refreshRes.ok) {
+          const data = await refreshRes.json();
+          setGrades(data);
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error('Save grade error:', err);
+        setGradesError(err.error || err.details || "Αποτυχία αποθήκευσης βαθμού.");
+      }
+    } catch (error) {
+      console.error('Save grade exception:', error);
+      setGradesError("Αποτυχία αποθήκευσης βαθμού.");
+    }
+    
+    setGradesLoading(false);
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
@@ -553,7 +688,7 @@ function Teacher({ user, topics, setTopics }) {
       {/* Modal for thesis management */}
       {showManageTheses && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content">
+          <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowManageTheses(false)}>&times;</button>
             <h3 className="text-xl font-bold mb-4">Διαχείριση διπλωματικών</h3>
             {manageThesesLoading ? (
@@ -825,6 +960,13 @@ function Teacher({ user, topics, setTopics }) {
                           Κείμενο Ανακοίνωσης Παρουσίασης
                         </button>
                       )}
+                      {/* Grades Button */}
+                      <button
+                        className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded mt-2 ml-2"
+                        onClick={() => handleShowGradesModal(thesis)}
+                      >
+                        Βαθμολόγηση
+                      </button>
                     </div>
                   ))
                 )}
@@ -982,6 +1124,128 @@ function Teacher({ user, topics, setTopics }) {
                   >
                     Ακύρωση
                   </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Grades Modal */}
+      {showGradesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-4xl w-full relative modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowGradesModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Βαθμολόγηση Διπλωματικής</h3>
+            {selectedThesisForGrades && (
+              <div className="mb-4">
+                <p className="text-white"><strong>Διπλωματική:</strong> {selectedThesisForGrades.title}</p>
+                <p className="text-white"><strong>Φοιτητής:</strong> {selectedThesisForGrades.student_name} {selectedThesisForGrades.student_surname}</p>
+              </div>
+            )}
+            {gradesLoading && <div>Φόρτωση...</div>}
+            {gradesError && <div className="text-red-500 mb-4">{gradesError}</div>}
+            {!gradesLoading && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* My Grade Form */}
+                <div>
+                  <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Η Βαθμολόγησή μου</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block mb-2 text-white">
+                        Ποιότητα Δ.Ε. και βαθμός εκπλήρωσης στόχων (60%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={myGrade.quality}
+                        onChange={e => handleCriteriaChange('quality', e.target.value)}
+                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2 text-white">
+                        Χρονικό διάστημα εκπόνησης (15%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={myGrade.timeline}
+                        onChange={e => handleCriteriaChange('timeline', e.target.value)}
+                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2 text-white">
+                        Ποιότητα και πληρότητα κειμένου (15%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={myGrade.completeness}
+                        onChange={e => handleCriteriaChange('completeness', e.target.value)}
+                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2 text-white">
+                        Συνολική εικόνα παρουσίασης (10%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.1"
+                        value={myGrade.presentation}
+                        onChange={e => handleCriteriaChange('presentation', e.target.value)}
+                        className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                      />
+                    </div>
+                    <div className="p-3 bg-gray-800 rounded">
+                      <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {totalGrade}/10</p>
+                    </div>
+                    <button
+                      className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded w-full"
+                      onClick={handleSaveGrade}
+                      disabled={gradesLoading}
+                    >
+                      {gradesLoading ? "Αποθήκευση..." : "Αποθήκευση Βαθμού"}
+                    </button>
+                  </div>
+                </div>
+                
+                {/* All Grades Display */}
+                <div>
+                  <h4 className="font-semibold mb-4" style={{ color: "#0ef" }}>Όλοι οι Βαθμοί</h4>
+                  {grades.length === 0 ? (
+                    <p className="text-white">Δεν έχουν καταχωρηθεί βαθμοί ακόμα.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {grades.map(grade => (
+                        <div key={grade.id} className="border p-3 rounded bg-gray-800">
+                          <p className="text-white font-semibold">
+                            {grade.name} {grade.surname}
+                          </p>
+                          <p className="text-white"><strong>Συνολικός Βαθμός:</strong> {grade.grade}/10</p>
+                          <div className="text-sm text-gray-300 mt-2">
+                            <p><strong>Ποιότητα:</strong> {grade.criteria.quality}/10 (60%)</p>
+                            <p><strong>Χρονικό Διάστημα:</strong> {grade.criteria.timeline}/10 (15%)</p>
+                            <p><strong>Πληρότητα:</strong> {grade.criteria.completeness}/10 (15%)</p>
+                            <p><strong>Παρουσίαση:</strong> {grade.criteria.presentation}/10 (10%)</p>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2">
+                            Καταχωρήθηκε: {new Date(grade.created_at).toLocaleString("el-GR")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1334,6 +1598,17 @@ function Student({ user, topics = [] }) {
   const [presentationError, setPresentationError] = useState("");
   const [presentationInfo, setPresentationInfo] = useState(null);
 
+  // State for library submission modal
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [libraryLink, setLibraryLink] = useState("");
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
+  
+  // State for examination minutes modal
+  const [showMinutesModal, setShowMinutesModal] = useState(false);
+  const [minutesContent, setMinutesContent] = useState("");
+  const [minutesLoading, setMinutesLoading] = useState(false);
+
   // Fetch thesis details when modal opens
   const handleShowDetails = async (topic) => {
     setLoadingDetails(true);
@@ -1680,6 +1955,62 @@ function Student({ user, topics = [] }) {
     setPresentationLoading(false);
   };
 
+  const handleShowLibraryModal = async () => {
+    setShowLibraryModal(true);
+    setLibraryError('');
+    setLibraryLoading(true);
+    try {
+      const res = await fetch(`/api/library-submission/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+      const data = await res.json();
+      if (data && data.repository_link) {
+        setLibraryLink(data.repository_link);
+      } else {
+        setLibraryLink('');
+      }
+    } catch (e) {
+      setLibraryError('Αποτυχία φόρτωσης συνδέσμου.');
+    }
+    setLibraryLoading(false);
+  };
+
+  const handleSaveLibraryLink = async () => {
+    setLibraryLoading(true);
+    setLibraryError('');
+    try {
+      const res = await fetch('/api/library-submission', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${user.token}`,
+        },
+        body: JSON.stringify({ thesisId, repositoryLink: libraryLink }),
+      });
+      if (!res.ok) throw new Error('Αποτυχία αποθήκευσης.');
+      setShowLibraryModal(false);
+    } catch (e) {
+      setLibraryError(e.message);
+    }
+    setLibraryLoading(false);
+  };
+
+  const handleShowMinutesModal = async () => {
+    setShowMinutesModal(true);
+    setMinutesLoading(true);
+    try {
+      const res = await fetch(`/api/examination-minutes/${thesisId}`, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+      const html = await res.text();
+      if (!res.ok) throw new Error('Αποτυχία φόρτωσης πρακτικού.');
+      setMinutesContent(html);
+    } catch (e) {
+      setMinutesContent(`<p style="color:red;">${e.message}</p>`);
+    }
+    setMinutesLoading(false);
+  };
+
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
@@ -1713,6 +2044,20 @@ function Student({ user, topics = [] }) {
             disabled={!assignedTopic || !thesisId}
           >
             Λεπτομέρειες Παρουσίασης
+          </button>
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+            onClick={handleShowLibraryModal}
+            disabled={!assignedTopic || !thesisId}
+          >
+            Συνδέσμος Βιβλιοθήκης
+          </button>
+          <button
+            className="bg-[#0ef] text-white px-3 py-1 mb-4 ml-2"
+            onClick={handleShowMinutesModal}
+            disabled={!assignedTopic || !thesisId}
+          >
+            Εξεταστικά Εγγράφα
           </button>
         </>
       )}
@@ -2134,6 +2479,76 @@ function Student({ user, topics = [] }) {
                 <p><strong>Τόπος/Σύνδεσμος:</strong> {presentationInfo.location_or_link}</p>
                 <p className="text-xs mt-2">Ενημερώθηκε: {new Date(presentationInfo.created_at).toLocaleString("el-GR")}</p>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Library Submission Modal */}
+      {showLibraryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="bg-white rounded shadow-lg p-6 max-w-lg w-full relative modal-content">
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowLibraryModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4">Συνδέσμος Βιβλιοθήκης</h3>
+            {libraryLoading && <div>Φόρτωση...</div>}
+            {libraryError && <div className="text-red-500">{libraryError}</div>}
+            {!libraryLoading && (
+              <form onSubmit={handleSaveLibraryLink}>
+                <div className="mb-4">
+                  <label className="block mb-2 font-semibold">Συνδέσμος Βιβλιοθήκης:</label>
+                  <input
+                    type="text"
+                    value={libraryLink}
+                    onChange={e => setLibraryLink(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                </div>
+                <button 
+                  className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded w-full" 
+                  type="submit" 
+                  disabled={libraryLoading}
+                >
+                  {libraryLoading ? "Αποθήκευση..." : "Αποθήκευση"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Examination Minutes Modal */}
+      {showMinutesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" style={{ zIndex: 1000 }}>
+          <div className="bg-white rounded shadow-lg p-6 max-w-4xl w-full relative modal-content" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowMinutesModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Πρακτικό Εξέτασης</h3>
+            {minutesLoading && <div>Φόρτωση...</div>}
+            {!minutesLoading && (
+              <>
+                <iframe
+                  srcDoc={minutesContent}
+                  title="Πρακτικό Εξέτασης"
+                  style={{ width: '100%', flexGrow: 1, border: 'none', backgroundColor: '#fff' }}
+                />
+                <div className="flex space-x-2 mt-4">
+                  <button
+                    className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded"
+                    onClick={() => {
+                      const newWindow = window.open();
+                      newWindow.document.write(minutesContent);
+                      newWindow.document.close();
+                      newWindow.print();
+                    }}
+                  >
+                    Εκτύπωση
+                  </button>
+                  <button
+                    className="bg-gray-500 text-white px-4 py-2 rounded"
+                    onClick={() => setShowMinutesModal(false)}
+                  >
+                    Κλείσιμο
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

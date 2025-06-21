@@ -56,6 +56,8 @@ function authenticate(req, res, next) {
   const token = auth.split(" ")[1]; // Extract token from "Bearer <token>"
   jwt.verify(token, JWT_SECRET, (err, user) => { // Verify token
     if (err) return res.sendStatus(403); // If invalid, forbidden
+    console.log('Authenticated user:', user); // Log user data
+    console.log('User ID type:', typeof user.id, 'User ID value:', user.id);
     req.user = user; // Attach user info to request
     next(); // Continue to next middleware/route
   });
@@ -851,7 +853,9 @@ app.post("/api/notes/:thesisId", authenticate, async (req, res) => {
 });
 
 // Start the server on port 5000
-app.listen(5000, () => console.log("Backend running on port 5000"));
+app.listen(5000, () => {
+  console.log('Server running on port 5000');
+});
 
 // Ακύρωση διπλωματικής από επιβλέποντα
 app.post("/api/theses/:id/cancel-by-supervisor", authenticate, async (req, res) => {
@@ -1385,5 +1389,403 @@ app.post('/api/announcement-text/:thesisId', authenticate, async (req, res) => {
     console.error('Announcement text error:', err);
     await conn.end();
     res.status(500).json({ error: 'Σφάλμα κατά την αποθήκευση κειμένου ανακοίνωσης', details: err.message });
+  }
+});
+
+// GET: Fetch grades for a thesis (committee members only)
+app.get('/api/grades/:thesisId', authenticate, async (req, res) => {
+  if (req.user.role !== 'Διδάσκων') return res.status(403).json({ error: 'Forbidden' });
+  
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    console.log('Grades request:', { thesisId, userId: req.user.id, userRole: req.user.role });
+    console.log('Thesis ID type:', typeof thesisId, 'Thesis ID value:', thesisId);
+    
+    // Check if professor is committee member or supervisor of this thesis
+    const [thesisRows] = await conn.execute(
+      `SELECT th.id, th.supervisor_id, cm.professor_id as committee_member_id
+       FROM theses th
+       LEFT JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+       WHERE th.id = ?`,
+      [req.user.id, thesisId]
+    );
+    
+    console.log('Thesis check result:', thesisRows);
+    
+    // Check if user is supervisor or committee member
+    const isSupervisor = thesisRows.some(row => row.supervisor_id === req.user.id);
+    const isCommitteeMember = thesisRows.some(row => row.committee_member_id === req.user.id);
+    
+    console.log('Access check:', { isSupervisor, isCommitteeMember, thesisId, userId: req.user.id });
+    
+    if (!isSupervisor && !isCommitteeMember) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
+    }
+    
+    // Check if grades table exists, create if not
+    try {
+      await conn.execute('SELECT 1 FROM grades LIMIT 1');
+    } catch (tableErr) {
+      console.log('Creating grades table...');
+      await conn.execute(`
+        CREATE TABLE grades (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          thesis_id INT NOT NULL,
+          professor_id INT NOT NULL,
+          grade DECIMAL(5,2) NOT NULL,
+          criteria JSON NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (thesis_id) REFERENCES theses(id) ON DELETE CASCADE,
+          FOREIGN KEY (professor_id) REFERENCES professors(id) ON DELETE CASCADE,
+          UNIQUE KEY unique_grade (thesis_id, professor_id)
+        )
+      `);
+    }
+    
+    // Get all grades for this thesis
+    console.log('Fetching grades for thesis ID:', thesisId);
+    const [gradeRows] = await conn.execute(
+      `SELECT g.id, g.grade, g.criteria, g.created_at, p.name, p.surname, g.professor_id
+       FROM grades g
+       JOIN professors p ON g.professor_id = p.id
+       WHERE g.thesis_id = ?
+       ORDER BY g.created_at DESC`,
+      [thesisId]
+    );
+    
+    console.log('Grades found:', gradeRows.length);
+    console.log('Grade rows:', gradeRows);
+    
+    // Also check what grades exist in the table for debugging
+    const [allGrades] = await conn.execute('SELECT * FROM grades');
+    console.log('All grades in table:', allGrades);
+    
+    await conn.end();
+    
+    // Parse criteria JSON
+    const grades = gradeRows.map(row => ({
+      ...row,
+      criteria: typeof row.criteria === 'string' ? JSON.parse(row.criteria) : row.criteria
+    }));
+    
+    res.json(grades);
+  } catch (err) {
+    console.error('Grades fetch error:', err);
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση βαθμών', details: err.message });
+  }
+});
+
+// POST: Submit grade for a thesis (committee members only)
+app.post('/api/grades/:thesisId', authenticate, async (req, res) => {
+  if (req.user.role !== 'Διδάσκων') return res.status(403).json({ error: 'Forbidden' });
+  
+  const thesisId = req.params.thesisId;
+  const { grade, criteria } = req.body;
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    console.log('Grade submission request:', { thesisId, grade, criteria, userId: req.user.id, userRole: req.user.role });
+    console.log('Thesis ID type:', typeof thesisId, 'Thesis ID value:', thesisId);
+    
+    // Validate input
+    if (!grade || !criteria) {
+      return res.status(400).json({ error: 'Ο βαθμός και τα κριτήρια είναι υποχρεωτικά.' });
+    }
+    
+    if (grade < 0 || grade > 10) {
+      return res.status(400).json({ error: 'Ο βαθμός πρέπει να είναι μεταξύ 0 και 10.' });
+    }
+    
+    // Check if professor is committee member or supervisor of this thesis
+    const [thesisRows] = await conn.execute(
+      `SELECT th.id, th.supervisor_id, cm.professor_id as committee_member_id
+       FROM theses th
+       LEFT JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+       WHERE th.id = ?`,
+      [req.user.id, thesisId]
+    );
+    
+    console.log('Thesis check result for POST:', thesisRows);
+    
+    // Check if user is supervisor or committee member
+    const isSupervisor = thesisRows.some(row => row.supervisor_id === req.user.id);
+    const isCommitteeMember = thesisRows.some(row => row.committee_member_id === req.user.id);
+    
+    console.log('Access check for POST:', { isSupervisor, isCommitteeMember, thesisId, userId: req.user.id });
+    
+    if (!isSupervisor && !isCommitteeMember) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
+    }
+    
+    // Check if grades table exists, create if not
+    try {
+      await conn.execute('SELECT 1 FROM grades LIMIT 1');
+    } catch (tableErr) {
+      console.log('Creating grades table...');
+      await conn.execute(`
+        CREATE TABLE grades (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          thesis_id INT NOT NULL,
+          professor_id INT NOT NULL,
+          grade DECIMAL(5,2) NOT NULL,
+          criteria JSON NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (thesis_id) REFERENCES theses(id) ON DELETE CASCADE,
+          FOREIGN KEY (professor_id) REFERENCES professors(id) ON DELETE CASCADE,
+          UNIQUE KEY unique_grade (thesis_id, professor_id)
+        )
+      `);
+    }
+    
+    // Check if grade already exists for this professor
+    const [existingGrade] = await conn.execute(
+      'SELECT id FROM grades WHERE thesis_id = ? AND professor_id = ?',
+      [thesisId, req.user.id]
+    );
+    
+    console.log('Existing grade check:', { thesisId, professorId: req.user.id, existingGrade });
+    
+    if (existingGrade.length) {
+      // Update existing grade
+      console.log('Updating existing grade');
+      await conn.execute(
+        'UPDATE grades SET grade = ?, criteria = ?, created_at = NOW() WHERE thesis_id = ? AND professor_id = ?',
+        [grade, JSON.stringify(criteria), thesisId, req.user.id]
+      );
+    } else {
+      // Insert new grade
+      console.log('Inserting new grade with thesis_id:', thesisId);
+      await conn.execute(
+        'INSERT INTO grades (thesis_id, professor_id, grade, criteria, created_at) VALUES (?, ?, ?, ?, NOW())',
+        [thesisId, req.user.id, grade, JSON.stringify(criteria)]
+      );
+    }
+    
+    // Verify the grade was saved
+    const [savedGrade] = await conn.execute(
+      'SELECT * FROM grades WHERE thesis_id = ? AND professor_id = ?',
+      [thesisId, req.user.id]
+    );
+    console.log('Saved grade verification:', savedGrade);
+    
+    await conn.end();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Grade submission error:', err);
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά την αποθήκευση βαθμού', details: err.message });
+  }
+});
+
+// GET: Generate examination minutes (πρακτικό εξέτασης) in HTML format
+app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => {
+  const thesisId = req.params.thesisId;
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    // Check if user has access to this thesis
+    let allowed = false;
+    if (req.user.role === 'Φοιτητής') {
+      const [rows] = await conn.execute('SELECT id FROM theses WHERE id = ? AND student_id = ?', [thesisId, req.user.id]);
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Διδάσκων') {
+      const [rows] = await conn.execute(
+        `SELECT th.id FROM theses th
+         LEFT JOIN committee_members cm ON cm.thesis_id = th.id AND cm.professor_id = ?
+         WHERE th.id = ? AND (th.supervisor_id = ? OR cm.professor_id = ?)`,
+        [req.user.id, thesisId, req.user.id, req.user.id]
+      );
+      allowed = rows.length > 0;
+    } else if (req.user.role === 'Γραμματεία') {
+      allowed = true;
+    }
+    
+    if (!allowed) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν έχετε δικαίωμα πρόσβασης.' });
+    }
+    
+    // Get thesis details
+    const [thesisRows] = await conn.execute(
+      `SELECT th.id, th.status, th.official_assignment_date, th.final_grade,
+              s.name as student_name, s.surname as student_surname, s.student_number,
+              t.title as thesis_title,
+              p.name as supervisor_name, p.surname as supervisor_surname
+       FROM theses th
+       JOIN students s ON th.student_id = s.id
+       JOIN thesis_topics t ON th.topic_id = t.id
+       JOIN professors p ON th.supervisor_id = p.id
+       WHERE th.id = ?`,
+      [thesisId]
+    );
+    
+    if (!thesisRows.length) {
+      await conn.end();
+      return res.status(404).json({ error: 'Δεν βρέθηκε η διπλωματική.' });
+    }
+    
+    const thesis = thesisRows[0];
+    
+    // Get all grades for this thesis
+    const [gradeRows] = await conn.execute(
+      `SELECT g.grade, g.criteria, g.created_at, p.name, p.surname, p.department
+       FROM grades g
+       JOIN professors p ON g.professor_id = p.id
+       WHERE g.thesis_id = ?
+       ORDER BY p.id`,
+      [thesisId]
+    );
+    
+    const grades = gradeRows.map(row => ({
+      ...row,
+      criteria: typeof row.criteria === 'string' ? JSON.parse(row.criteria) : row.criteria
+    }));
+    
+    const totalGrade = grades.reduce((sum, grade) => sum + parseFloat(grade.grade), 0);
+    const averageGrade = grades.length > 0 ? (totalGrade / grades.length).toFixed(2) : 0;
+    
+    const html = `
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <title>Πρακτικό Εξέτασης</title>
+    <style>
+        body { font-family: 'Times New Roman', serif; line-height: 1.6; margin: 40px; color: #333; }
+        .container { max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ccc; }
+        .header { text-align: center; margin-bottom: 40px; }
+        h1, h2 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .info-table td:first-child { font-weight: bold; width: 200px; }
+        .signatures { margin-top: 60px; }
+        .signature { display: inline-block; width: 30%; text-align: center; margin-top: 40px; }
+        .signature p { border-top: 1px solid #333; padding-top: 5px; }
+        .final-grade { text-align: right; font-size: 1.2em; font-weight: bold; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>ΕΘΝΙΚΟ ΚΑΙ ΚΑΠΟΔΙΣΤΡΙΑΚΟ ΠΑΝΕΠΙΣΤΗΜΙΟ ΑΘΗΝΩΝ</h2>
+            <h3>ΤΜΗΜΑ ΠΛΗΡΟΦΟΡΙΚΗΣ ΚΑΙ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ</h3>
+        </div>
+        <h1>ΠΡΑΚΤΙΚΟ ΕΞΕΤΑΣΗΣ ΔΙΠΛΩΜΑΤΙΚΗΣ ΕΡΓΑΣΙΑΣ</h1>
+        <table class="info-table">
+            <tr><td>Ημερομηνία Εξέτασης:</td><td>${new Date().toLocaleDateString('el-GR')}</td></tr>
+            <tr><td>Ονοματεπώνυμο Φοιτητή/τριας:</td><td>${thesis.student_name} ${thesis.student_surname}</td></tr>
+            <tr><td>Αριθμός Μητρώου:</td><td>${thesis.student_number}</td></tr>
+            <tr><td>Τίτλος Διπλωματικής Εργασίας:</td><td>${thesis.thesis_title}</td></tr>
+            <tr><td>Επιβλέπων Καθηγητής:</td><td>${thesis.supervisor_name} ${thesis.supervisor_surname}</td></tr>
+        </table>
+        <h2>ΒΑΘΜΟΛΟΓΙΑ</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Μέλος Εξεταστικής Επιτροπής</th>
+                    <th>Βαθμός (0-10)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${grades.map(g => `
+                <tr>
+                    <td>${g.name} ${g.surname}</td>
+                    <td>${g.grade}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+        <div class="final-grade">
+            Τελικός Βαθμός: ${averageGrade}
+        </div>
+        <div class="signatures">
+            <p>Η Εξεταστική Επιτροπή</p>
+            ${grades.map(g => `
+            <div class="signature">
+                <p>${g.name} ${g.surname}</p>
+            </div>
+            `).join('')}
+        </div>
+    </div>
+</body>
+</html>`;
+    
+    await conn.end();
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+    
+  } catch (err) {
+    console.error('Examination minutes error:', err);
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα κατά τη δημιουργία πρακτικού', details: err.message });
+  }
+});
+
+// POST: Submit library repository link
+app.post('/api/library-submission', authenticate, async (req, res) => {
+  const { thesisId, repositoryLink } = req.body;
+  
+  if (req.user.role !== 'Φοιτητής') {
+    return res.status(403).json({ error: 'Μόνο οι φοιτητές μπορούν να εκτελέσουν αυτή την ενέργεια.' });
+  }
+  if (!thesisId || !repositoryLink) {
+    return res.status(400).json({ error: 'Λείπουν δεδομένα.' });
+  }
+
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    const [thesisRows] = await conn.execute(
+      'SELECT id FROM theses WHERE id = ? AND student_id = ?',
+      [thesisId, req.user.id]
+    );
+
+    if (thesisRows.length === 0) {
+      await conn.end();
+      return res.status(403).json({ error: 'Δεν επιτρέπεται η πρόσβαση.' });
+    }
+
+    await conn.execute(
+      'INSERT INTO library_submissions (thesis_id, repository_link) VALUES (?, ?) ON DUPLICATE KEY UPDATE repository_link = VALUES(repository_link)',
+      [thesisId, repositoryLink]
+    );
+
+    await conn.execute(
+      'UPDATE theses SET library_repository_link = ? WHERE id = ?',
+      [repositoryLink, thesisId]
+    );
+    
+    await conn.end();
+    res.status(200).json({ message: 'Ο σύνδεσμος αποθηκεύτηκε.' });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα διακομιστή.', details: err.message });
+  }
+});
+
+// GET: Get library submission for a thesis
+app.get('/api/library-submission/:thesisId', authenticate, async (req, res) => {
+  const { thesisId } = req.params;
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    const [rows] = await conn.execute(
+      'SELECT repository_link, submitted_at FROM library_submissions WHERE thesis_id = ?',
+      [thesisId]
+    );
+
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.json(null);
+    }
+    await conn.end();
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα διακομιστή.', details: err.message });
   }
 });
