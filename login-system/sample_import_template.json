@@ -1,0 +1,57 @@
+{
+  "students": [
+    {
+      "name": "Όνομα Φοιτητή",
+      "surname": "Επώνυμο Φοιτητή",
+      "student_number": "ΑΜ123456",
+      "password": "κωδικός123",
+      "email": "student@example.com",
+      "mobile_telephone": "6970123456",
+      "landline_telephone": "2101234567",
+      "street": "Οδός Παπαδόπουλου",
+      "number": "123",
+      "city": "Αθήνα",
+      "postcode": "12345",
+      "father_name": "Όνομα Πατέρα"
+    },
+    {
+      "name": "Μαρία",
+      "surname": "Κωνσταντίνου",
+      "student_number": "ΑΜ789012",
+      "password": "password456",
+      "email": "maria.konstantinou@example.com",
+      "mobile_telephone": "6987654321",
+      "landline_telephone": "2109876543",
+      "street": "Οδός Κωνσταντίνου",
+      "number": "42",
+      "city": "Θεσσαλονίκη",
+      "postcode": "54321",
+      "father_name": "Δημήτρης Κωνσταντίνου"
+    }
+  ],
+  "professors": [
+    {
+      "name": "Όνομα Διδάσκοντα",
+      "surname": "Επώνυμο Διδάσκοντα",
+      "email": "professor@example.com",
+      "password": "κωδικός123",
+      "department": "Τμήμα Πληροφορικής",
+      "topic": "Ειδικότητα Διδάσκοντα",
+      "landline": "2101234567",
+      "mobile": "6970123456",
+      "university": "Εθνικό και Καποδιστριακό Πανεπιστήμιο Αθηνών"
+    },
+    {
+      "name": "Δρ. Νίκος",
+      "surname": "Δημητρίου",
+      "email": "nikos.dimitriou@example.com",
+      "password": "professor456",
+      "department": "Τμήμα Πληροφορικής",
+      "title": "Αναπληρωτής Καθηγητής",
+      "topic": "Τεχνητή Νοημοσύνη",
+      "landline": "2109876543",
+      "mobile": "6987654321",
+      "university": "Εθνικό και Καποδιστριακό Πανεπιστήμιο Αθηνών"
+    }
+  ]
+} 

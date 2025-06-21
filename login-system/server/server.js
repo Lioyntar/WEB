@@ -1902,3 +1902,210 @@ app.get('/api/admin/theses', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Σφάλμα κατά την ανάκτηση διπλωματικών', details: err.message });
   }
 });
+
+// POST: Import JSON data for students and professors (admin/secretariat only)
+app.post('/api/admin/import-data', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const { students, professors } = req.body;
+  
+  if (!students && !professors) {
+    return res.status(400).json({ error: 'Δεν παρέχονται δεδομένα για εισαγωγή.' });
+  }
+
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    const results = {
+      students: { imported: 0, errors: [] },
+      professors: { imported: 0, errors: [] }
+    };
+
+    // Import students if provided
+    if (students && Array.isArray(students)) {
+      for (let i = 0; i < students.length; i++) {
+        const student = students[i];
+        try {
+          // Validate required fields
+          if (!student.name || !student.surname || !student.student_number || !student.password) {
+            results.students.errors.push(`Γραμμή ${i + 1}: Λείπουν υποχρεωτικά πεδία (name, surname, student_number, password)`);
+            continue;
+          }
+
+          // Check if student already exists
+          const [existing] = await conn.execute(
+            'SELECT id FROM students WHERE student_number = ?',
+            [student.student_number]
+          );
+
+          if (existing.length > 0) {
+            // Update existing student
+            await conn.execute(
+              `UPDATE students SET 
+               name = ?, surname = ?, password_hash = ?, 
+               email = ?, mobile_telephone = ?, landline_telephone = ?,
+               number = ?, city = ?, postcode = ?, street = ?, father_name = ?
+               WHERE student_number = ?`,
+              [
+                student.name,
+                student.surname,
+                bcrypt.hashSync(student.password, 10),
+                student.email || null,
+                student.mobile_telephone || null,
+                student.landline_telephone || null,
+                student.number || null,
+                student.city || null,
+                student.postcode || null,
+                student.street || null,
+                student.father_name || null,
+                student.student_number
+              ]
+            );
+          } else {
+            // Insert new student
+            await conn.execute(
+              `INSERT INTO students 
+               (name, surname, student_number, password_hash, email, mobile_telephone, landline_telephone, number, city, postcode, street, father_name) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                student.name,
+                student.surname,
+                student.student_number,
+                bcrypt.hashSync(student.password, 10),
+                student.email || null,
+                student.mobile_telephone || null,
+                student.landline_telephone || null,
+                student.number || null,
+                student.city || null,
+                student.postcode || null,
+                student.street || null,
+                student.father_name || null
+              ]
+            );
+          }
+          results.students.imported++;
+        } catch (err) {
+          results.students.errors.push(`Γραμμή ${i + 1}: ${err.message}`);
+        }
+      }
+    }
+
+    // Import professors if provided
+    if (professors && Array.isArray(professors)) {
+      for (let i = 0; i < professors.length; i++) {
+        const professor = professors[i];
+        try {
+          // Validate required fields
+          if (!professor.name || !professor.surname || !professor.email || !professor.password) {
+            results.professors.errors.push(`Γραμμή ${i + 1}: Λείπουν υποχρεωτικά πεδία (name, surname, email, password)`);
+            continue;
+          }
+
+          // Check if professor already exists
+          const [existing] = await conn.execute(
+            'SELECT id FROM professors WHERE email = ?',
+            [professor.email]
+          );
+
+          if (existing.length > 0) {
+            // Update existing professor
+            await conn.execute(
+              `UPDATE professors SET 
+               name = ?, surname = ?, password_hash = ?, 
+               department = ?, topic = ?, landline = ?, mobile = ?, university = ?
+               WHERE email = ?`,
+              [
+                professor.name,
+                professor.surname,
+                bcrypt.hashSync(professor.password, 10),
+                professor.department || null,
+                professor.topic || null,
+                professor.landline || null,
+                professor.mobile || null,
+                professor.university || null,
+                professor.email
+              ]
+            );
+          } else {
+            // Insert new professor
+            await conn.execute(
+              `INSERT INTO professors 
+               (name, surname, email, password_hash, department, topic, landline, mobile, university) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                professor.name,
+                professor.surname,
+                professor.email,
+                bcrypt.hashSync(professor.password, 10),
+                professor.department || null,
+                professor.topic || null,
+                professor.landline || null,
+                professor.mobile || null,
+                professor.university || null
+              ]
+            );
+          }
+          results.professors.imported++;
+        } catch (err) {
+          results.professors.errors.push(`Γραμμή ${i + 1}: ${err.message}`);
+        }
+      }
+    }
+
+    await conn.end();
+    res.json({
+      success: true,
+      message: 'Η εισαγωγή ολοκληρώθηκε',
+      results
+    });
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ 
+      error: 'Σφάλμα κατά την εισαγωγή δεδομένων', 
+      details: err.message 
+    });
+  }
+});
+
+// GET: Export current data as JSON template (admin/secretariat only)
+app.get('/api/admin/export-template', authenticate, async (req, res) => {
+  if (req.user.role !== 'Γραμματεία') {
+    return res.status(403).json({ error: 'Μόνο η Γραμματεία μπορεί να εκτελέσει αυτή την ενέργεια.' });
+  }
+
+  const template = {
+    students: [
+      {
+        name: "Όνομα Φοιτητή",
+        surname: "Επώνυμο Φοιτητή",
+        student_number: "ΑΜ123456",
+        password: "κωδικός123",
+        email: "student@example.com",
+        mobile_telephone: "6970123456",
+        landline_telephone: "2101234567",
+        street: "Οδός Παπαδόπουλου",
+        number: "123",
+        city: "Αθήνα",
+        postcode: "12345",
+        father_name: "Όνομα Πατέρα"
+      }
+    ],
+    professors: [
+      {
+        name: "Όνομα Διδάσκοντα",
+        surname: "Επώνυμο Διδάσκοντα",
+        email: "professor@example.com",
+        password: "κωδικός123",
+        department: "Τμήμα Πληροφορικής",
+        topic: "Ειδικότητα Διδάσκοντα",
+        landline: "2101234567",
+        mobile: "6970123456",
+        university: "Εθνικό και Καποδιστριακό Πανεπιστήμιο Αθηνών"
+      }
+    ]
+  };
+
+  res.json(template);
+});

@@ -2619,6 +2619,18 @@ function Admin({ user }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showThesesList, setShowThesesList] = useState(false);
 
+  // State for JSON import functionality
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importData, setImportData] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importSuccess, setImportSuccess] = useState("");
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateData, setTemplateData] = useState(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState("");
+
   // Load theses on component mount
   useEffect(() => {
     if (user) {
@@ -2679,6 +2691,108 @@ function Admin({ user }) {
     if (months > 0) return `${months} μήνες, ${days % 30} μέρες`;
     if (days > 0) return `${days} μέρες`;
     return "Λιγότερο από μέρα";
+  };
+
+  // Handle JSON file selection
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (!file.name.endsWith('.json')) {
+      setImportError("Παρακαλώ επιλέξτε ένα αρχείο JSON.");
+      return;
+    }
+    
+    setImportFile(file);
+    setImportError("");
+    setImportSuccess("");
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        setImportData(data);
+      } catch (err) {
+        setImportError("Το αρχείο δεν είναι έγκυρο JSON.");
+        setImportData(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Download template
+  const handleDownloadTemplate = async () => {
+    setTemplateLoading(true);
+    setTemplateError("");
+    try {
+      const res = await fetch("/api/admin/export-template", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      if (res.ok) {
+        const template = await res.json();
+        const blob = new Blob([JSON.stringify(template, null, 2)], { 
+          type: "application/json;charset=utf-8;" 
+        });
+        saveAs(blob, "import_template.json");
+      } else {
+        setTemplateError("Αποτυχία λήψης προτύπου.");
+      }
+    } catch {
+      setTemplateError("Αποτυχία λήψης προτύπου.");
+    }
+    setTemplateLoading(false);
+  };
+
+  // Import data
+  const handleImportData = async () => {
+    if (!importData) {
+      setImportError("Δεν υπάρχουν δεδομένα για εισαγωγή.");
+      return;
+    }
+    
+    setImportLoading(true);
+    setImportError("");
+    setImportSuccess("");
+    
+    try {
+      const res = await fetch("/api/admin/import-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.token}`
+        },
+        body: JSON.stringify(importData)
+      });
+      
+      if (res.ok) {
+        const result = await res.json();
+        setImportSuccess(`Η εισαγωγή ολοκληρώθηκε επιτυχώς! Εισήχθησαν ${result.results.students.imported} φοιτητές και ${result.results.professors.imported} διδάσκοντες.`);
+        
+        // Show errors if any
+        const errors = [];
+        if (result.results.students.errors.length > 0) {
+          errors.push(`Σφάλματα φοιτητών: ${result.results.students.errors.join(', ')}`);
+        }
+        if (result.results.professors.errors.length > 0) {
+          errors.push(`Σφάλματα διδασκόντων: ${result.results.professors.errors.join(', ')}`);
+        }
+        
+        if (errors.length > 0) {
+          setImportError(errors.join('\n'));
+        }
+        
+        // Reset form
+        setImportFile(null);
+        setImportData(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setImportError(err.error || "Αποτυχία εισαγωγής δεδομένων.");
+      }
+    } catch {
+      setImportError("Αποτυχία εισαγωγής δεδομένων.");
+    }
+    
+    setImportLoading(false);
   };
 
   return (
@@ -2872,6 +2986,115 @@ function Admin({ user }) {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Εισαγωγή Δεδομένων JSON */}
+      <div className="border p-4 rounded bg-[#1f293a] mt-4">
+        <h3 className="text-lg font-bold mb-4" style={{ color: "#0ef" }}>Εισαγωγή Δεδομένων JSON</h3>
+        <p className="text-white mb-4">Εισάγετε προσωπικές πληροφορίες φοιτητών και διδασκόντων από αρχείο JSON.</p>
+        
+        <div className="space-y-4">
+          <button
+            className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded"
+            onClick={handleDownloadTemplate}
+            disabled={templateLoading}
+          >
+            {templateLoading ? "Λήψη..." : "Λήψη Προτύπου JSON"}
+          </button>
+          
+          <button
+            className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded ml-2"
+            onClick={() => setShowImportModal(true)}
+          >
+            Εισαγωγή Αρχείου JSON
+          </button>
+        </div>
+        
+        {templateError && (
+          <div className="text-red-500 mt-2">{templateError}</div>
+        )}
+      </div>
+
+      {/* Import JSON Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-2xl w-full relative modal-content">
+            <button 
+              className="absolute top-2 right-2 text-gray-500" 
+              onClick={() => {
+                setShowImportModal(false);
+                setImportFile(null);
+                setImportData(null);
+                setImportError("");
+                setImportSuccess("");
+              }}
+            >
+              &times;
+            </button>
+            <h3 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Εισαγωγή Δεδομένων JSON</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block mb-2 font-semibold text-white">Επιλέξτε αρχείο JSON:</label>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileSelect}
+                  className="w-full p-2 border rounded bg-[#1f293a] text-white"
+                />
+              </div>
+              
+              {importData && (
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-semibold mb-2 text-white">Προεπισκόπηση Δεδομένων:</h4>
+                  <div className="text-sm text-gray-300">
+                    {importData.students && (
+                      <p>Φοιτητές: {importData.students.length} εγγραφές</p>
+                    )}
+                    {importData.professors && (
+                      <p>Διδάσκοντες: {importData.professors.length} εγγραφές</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {importError && (
+                <div className="text-red-500 p-3 bg-red-100 rounded">
+                  {importError}
+                </div>
+              )}
+              
+              {importSuccess && (
+                <div className="text-green-500 p-3 bg-green-100 rounded">
+                  {importSuccess}
+                </div>
+              )}
+              
+              <div className="flex space-x-2">
+                <button
+                  className="bg-[#0ef] text-[#1f293a] px-4 py-2 rounded"
+                  onClick={handleImportData}
+                  disabled={importLoading || !importData}
+                >
+                  {importLoading ? "Εισαγωγή..." : "Εισαγωγή Δεδομένων"}
+                </button>
+                <button
+                  className="bg-gray-500 text-white px-4 py-2 rounded"
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportFile(null);
+                    setImportData(null);
+                    setImportError("");
+                    setImportSuccess("");
+                  }}
+                  disabled={importLoading}
+                >
+                  Ακύρωση
+                </button>
+              </div>
             </div>
           </div>
         </div>
