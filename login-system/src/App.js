@@ -68,7 +68,9 @@ function App() {
   // Check for thesis status changes and refresh topics
   useEffect(() => {
     if (user && topics.length > 0) {
-      const assignedTopic = topics.find(t => t.assignedTo === user.username);
+      const assignedTopic = topics.find(t => 
+        user.role === "Φοιτητής" ? t.assignedTo === user.student_number : t.assignedTo === user.username
+      );
       if (assignedTopic && assignedTopic.status === "υπό ανάθεση") {
         // Set up interval to check for status changes every 30 seconds
         const interval = setInterval(async () => {
@@ -78,7 +80,9 @@ function App() {
             });
             if (res.ok) {
               const updatedTopics = await res.json();
-              const updatedAssignedTopic = updatedTopics.find(t => t.assignedTo === user.username);
+              const updatedAssignedTopic = updatedTopics.find(t => 
+                user.role === "Φοιτητής" ? t.assignedTo === user.student_number : t.assignedTo === user.username
+              );
               
               // If status changed from "υπό ανάθεση" to "υπό εξέταση", update topics
               if (updatedAssignedTopic && updatedAssignedTopic.status === "υπό εξέταση") {
@@ -1992,7 +1996,7 @@ function timeSince(dateString) {
 function Student({ user, topics = [] }) {
   // Show only topics assigned to this student
   const assignedTopics = (topics || []).filter(
-    t => t.assignedTo === user.username
+    t => t.assignedTo === user.student_number
   );
 
   // State for modal and thesis details
@@ -2147,7 +2151,7 @@ function Student({ user, topics = [] }) {
   const thesisUnderAssignment = details && details.status === "υπό ανάθεση" ? details : null;
 
   // Βρες το θέμα που έχει ανατεθεί στον φοιτητή (αν υπάρχει)
-  const assignedTopic = (topics || []).find(t => t.assignedTo === user.username);
+  const assignedTopic = (topics || []).find(t => t.assignedTo === user.student_number);
 
   // Βρες το id της διπλωματικής (thesis) με ασφαλή τρόπο
   let thesisId = null;

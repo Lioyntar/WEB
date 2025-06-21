@@ -88,6 +88,7 @@ app.post("/api/login", async (req, res) => {
       name: rows[0].name,
       surname: rows[0].surname,
       username: rows[0].student_number,
+      student_number: rows[0].student_number,
       role: "Φοιτητής"
     };
     // Sign JWT token
@@ -151,133 +152,205 @@ app.post("/api/login", async (req, res) => {
   res.status(401).json({ error: "Invalid credentials" });
 });
 
-// Get all thesis topics (professor view)
+// Get all thesis topics (professor view) or student's assigned theses (student view)
 app.get("/api/topics", authenticate, async (req, res) => {
   try {
     console.log("[DEBUG] /api/topics called by user:", req.user);
     const conn = await mysql.createConnection(dbConfig);
     
-    // Get topics where professor is the creator
-    const [creatorTopics] = await conn.execute(`
-      SELECT 
-        tt.id, 
-        tt.title, 
-        tt.summary, 
-        tt.pdf_file_path AS fileName, 
-        p.name AS professor,
-        s.student_number AS assignedTo,
-        CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
-        t.status,
-        t.id AS thesis_id
-      FROM thesis_topics tt
-      INNER JOIN professors p ON tt.professor_id = p.id
-      LEFT JOIN theses t ON t.topic_id = tt.id
-      LEFT JOIN students s ON t.student_id = s.id
-      WHERE tt.professor_id = ?
-    `, [req.user.id]);
-    console.log(`[DEBUG] creatorTopics for user ${req.user.id}:`, creatorTopics.length);
-    
-    // Get topics where professor is the supervisor
-    const [supervisorTopics] = await conn.execute(`
-      SELECT 
-        tt.id, 
-        tt.title, 
-        tt.summary, 
-        tt.pdf_file_path AS fileName, 
-        p.name AS professor,
-        s.student_number AS assignedTo,
-        CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
-        t.status,
-        t.id AS thesis_id
-      FROM thesis_topics tt
-      INNER JOIN professors p ON tt.professor_id = p.id
-      INNER JOIN theses t ON t.topic_id = tt.id
-      LEFT JOIN students s ON t.student_id = s.id
-      WHERE t.supervisor_id = ? AND tt.professor_id != ?
-    `, [req.user.id, req.user.id]);
-    console.log(`[DEBUG] supervisorTopics for user ${req.user.id}:`, supervisorTopics.length);
-    
-    // Get topics where professor is a committee member
-    const [committeeTopics] = await conn.execute(`
-      SELECT 
-        tt.id, 
-        tt.title, 
-        tt.summary, 
-        tt.pdf_file_path AS fileName, 
-        p.name AS professor,
-        s.student_number AS assignedTo,
-        CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
-        t.status,
-        t.id AS thesis_id
-      FROM thesis_topics tt
-      INNER JOIN professors p ON tt.professor_id = p.id
-      INNER JOIN theses t ON t.topic_id = tt.id
-      LEFT JOIN students s ON t.student_id = s.id
-      INNER JOIN committee_members cm ON t.id = cm.thesis_id
-      WHERE cm.professor_id = ? AND tt.professor_id != ? AND t.supervisor_id != ?
-    `, [req.user.id, req.user.id, req.user.id]);
-    console.log(`[DEBUG] committeeTopics for user ${req.user.id}:`, committeeTopics.length);
-    
-    // Combine all topics and remove duplicates
-    const allTopics = [...creatorTopics, ...supervisorTopics, ...committeeTopics];
-    const uniqueTopics = allTopics.filter((topic, index, self) => 
-      index === self.findIndex(t => t.id === topic.id)
-    );
-    console.log(`[DEBUG] uniqueTopics for user ${req.user.id}:`, uniqueTopics.length);
-    
-    // Then get committee members for each thesis
-    const topicsWithCommittee = await Promise.all(uniqueTopics.map(async (topic) => {
-      if (topic.thesis_id) {
-        // Get committee members
-        const [committeeRows] = await conn.execute(`
-          SELECT 
-            cm.professor_id,
-            p.name,
-            p.surname,
-            'Μέλος' as role
-          FROM committee_members cm
-          JOIN professors p ON cm.professor_id = p.id
-          WHERE cm.thesis_id = ?
-        `, [topic.thesis_id]);
-        
-        console.log(`[DEBUG] Committee members for thesis ${topic.thesis_id}:`, committeeRows);
-        
-        // Get supervisor info
-        const [supervisorRows] = await conn.execute(`
-          SELECT 
-            t.supervisor_id as professor_id,
-            p.name,
-            p.surname,
-            'Επιβλέπων' as role
-          FROM theses t
-          JOIN professors p ON t.supervisor_id = p.id
-          WHERE t.id = ?
-        `, [topic.thesis_id]);
-        
-        console.log(`[DEBUG] Supervisor for thesis ${topic.thesis_id}:`, supervisorRows);
-        
-        // Combine supervisor and committee members, avoiding duplicates
-        const supervisor = supervisorRows[0];
-        const committeeMembers = committeeRows.filter(cm => cm.professor_id !== supervisor?.professor_id);
-        const allMembers = supervisor ? [supervisor, ...committeeMembers] : committeeMembers;
-        
-        console.log(`[DEBUG] All members for thesis ${topic.thesis_id}:`, allMembers);
-        
-        return {
-          ...topic,
-          committee: allMembers
-        };
-      } else {
-        return {
-          ...topic,
-          committee: []
-        };
-      }
-    }));
-    
-    await conn.end();
-    console.log(`[DEBUG] topicsWithCommittee for user ${req.user.id}:`, topicsWithCommittee.length);
-    res.json(topicsWithCommittee);
+    if (req.user.role === "Φοιτητής") {
+      // For students, get their assigned theses
+      const [studentTheses] = await conn.execute(`
+        SELECT 
+          tt.id, 
+          tt.title, 
+          tt.summary, 
+          tt.pdf_file_path AS fileName, 
+          p.name AS professor,
+          s.student_number AS assignedTo,
+          CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
+          t.status,
+          t.id AS thesis_id
+        FROM theses t
+        INNER JOIN thesis_topics tt ON t.topic_id = tt.id
+        INNER JOIN professors p ON tt.professor_id = p.id
+        INNER JOIN students s ON t.student_id = s.id
+        WHERE t.student_id = ?
+      `, [req.user.id]);
+      
+      console.log(`[DEBUG] studentTheses for student ${req.user.id}:`, studentTheses.length);
+      
+      // Get committee members for each thesis
+      const thesesWithCommittee = await Promise.all(studentTheses.map(async (thesis) => {
+        if (thesis.thesis_id) {
+          // Get committee members
+          const [committeeRows] = await conn.execute(`
+            SELECT 
+              cm.professor_id,
+              p.name,
+              p.surname,
+              'Μέλος' as role
+            FROM committee_members cm
+            JOIN professors p ON cm.professor_id = p.id
+            WHERE cm.thesis_id = ?
+          `, [thesis.thesis_id]);
+          
+          // Get supervisor info
+          const [supervisorRows] = await conn.execute(`
+            SELECT 
+              t.supervisor_id as professor_id,
+              p.name,
+              p.surname,
+              'Επιβλέπων' as role
+            FROM theses t
+            JOIN professors p ON t.supervisor_id = p.id
+            WHERE t.id = ?
+          `, [thesis.thesis_id]);
+          
+          // Combine supervisor and committee members, avoiding duplicates
+          const supervisor = supervisorRows[0];
+          const committeeMembers = committeeRows.filter(cm => cm.professor_id !== supervisor?.professor_id);
+          const allMembers = supervisor ? [supervisor, ...committeeMembers] : committeeMembers;
+          
+          return {
+            ...thesis,
+            committee: allMembers
+          };
+        } else {
+          return {
+            ...thesis,
+            committee: []
+          };
+        }
+      }));
+      
+      await conn.end();
+      console.log(`[DEBUG] thesesWithCommittee for student ${req.user.id}:`, thesesWithCommittee.length);
+      res.json(thesesWithCommittee);
+    } else {
+      // For professors, get topics where they are creator, supervisor, or committee member
+      // Get topics where professor is the creator
+      const [creatorTopics] = await conn.execute(`
+        SELECT 
+          tt.id, 
+          tt.title, 
+          tt.summary, 
+          tt.pdf_file_path AS fileName, 
+          p.name AS professor,
+          s.student_number AS assignedTo,
+          CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
+          t.status,
+          t.id AS thesis_id
+        FROM thesis_topics tt
+        INNER JOIN professors p ON tt.professor_id = p.id
+        LEFT JOIN theses t ON t.topic_id = tt.id
+        LEFT JOIN students s ON t.student_id = s.id
+        WHERE tt.professor_id = ?
+      `, [req.user.id]);
+      console.log(`[DEBUG] creatorTopics for user ${req.user.id}:`, creatorTopics.length);
+      
+      // Get topics where professor is the supervisor
+      const [supervisorTopics] = await conn.execute(`
+        SELECT 
+          tt.id, 
+          tt.title, 
+          tt.summary, 
+          tt.pdf_file_path AS fileName, 
+          p.name AS professor,
+          s.student_number AS assignedTo,
+          CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
+          t.status,
+          t.id AS thesis_id
+        FROM thesis_topics tt
+        INNER JOIN professors p ON tt.professor_id = p.id
+        INNER JOIN theses t ON t.topic_id = tt.id
+        LEFT JOIN students s ON t.student_id = s.id
+        WHERE t.supervisor_id = ? AND tt.professor_id != ?
+      `, [req.user.id, req.user.id]);
+      console.log(`[DEBUG] supervisorTopics for user ${req.user.id}:`, supervisorTopics.length);
+      
+      // Get topics where professor is a committee member
+      const [committeeTopics] = await conn.execute(`
+        SELECT 
+          tt.id, 
+          tt.title, 
+          tt.summary, 
+          tt.pdf_file_path AS fileName, 
+          p.name AS professor,
+          s.student_number AS assignedTo,
+          CONCAT(s.name, ' ', s.surname) AS assignedStudentName,
+          t.status,
+          t.id AS thesis_id
+        FROM thesis_topics tt
+        INNER JOIN professors p ON tt.professor_id = p.id
+        INNER JOIN theses t ON t.topic_id = tt.id
+        LEFT JOIN students s ON t.student_id = s.id
+        INNER JOIN committee_members cm ON t.id = cm.thesis_id
+        WHERE cm.professor_id = ? AND tt.professor_id != ? AND t.supervisor_id != ?
+      `, [req.user.id, req.user.id, req.user.id]);
+      console.log(`[DEBUG] committeeTopics for user ${req.user.id}:`, committeeTopics.length);
+      
+      // Combine all topics and remove duplicates
+      const allTopics = [...creatorTopics, ...supervisorTopics, ...committeeTopics];
+      const uniqueTopics = allTopics.filter((topic, index, self) => 
+        index === self.findIndex(t => t.id === topic.id)
+      );
+      console.log(`[DEBUG] uniqueTopics for user ${req.user.id}:`, uniqueTopics.length);
+      
+      // Then get committee members for each thesis
+      const topicsWithCommittee = await Promise.all(uniqueTopics.map(async (topic) => {
+        if (topic.thesis_id) {
+          // Get committee members
+          const [committeeRows] = await conn.execute(`
+            SELECT 
+              cm.professor_id,
+              p.name,
+              p.surname,
+              'Μέλος' as role
+            FROM committee_members cm
+            JOIN professors p ON cm.professor_id = p.id
+            WHERE cm.thesis_id = ?
+          `, [topic.thesis_id]);
+          
+          console.log(`[DEBUG] Committee members for thesis ${topic.thesis_id}:`, committeeRows);
+          
+          // Get supervisor info
+          const [supervisorRows] = await conn.execute(`
+            SELECT 
+              t.supervisor_id as professor_id,
+              p.name,
+              p.surname,
+              'Επιβλέπων' as role
+            FROM theses t
+            JOIN professors p ON t.supervisor_id = p.id
+            WHERE t.id = ?
+          `, [topic.thesis_id]);
+          
+          console.log(`[DEBUG] Supervisor for thesis ${topic.thesis_id}:`, supervisorRows);
+          
+          // Combine supervisor and committee members, avoiding duplicates
+          const supervisor = supervisorRows[0];
+          const committeeMembers = committeeRows.filter(cm => cm.professor_id !== supervisor?.professor_id);
+          const allMembers = supervisor ? [supervisor, ...committeeMembers] : committeeMembers;
+          
+          console.log(`[DEBUG] All members for thesis ${topic.thesis_id}:`, allMembers);
+          
+          return {
+            ...topic,
+            committee: allMembers
+          };
+        } else {
+          return {
+            ...topic,
+            committee: []
+          };
+        }
+      }));
+      
+      await conn.end();
+      console.log(`[DEBUG] topicsWithCommittee for user ${req.user.id}:`, topicsWithCommittee.length);
+      res.json(topicsWithCommittee);
+    }
   } catch (err) {
     console.error("Error fetching topics:", err);
     res.status(500).json({ error: "Σφάλμα ανάκτησης θεμάτων." });
