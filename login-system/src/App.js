@@ -55,7 +55,7 @@ function App() {
         <Route path="/teacher/topics" element={<PrivateRoute user={user} role="Διδάσκων"><TopicManagement user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
         <Route path="/teacher/assign" element={<PrivateRoute user={user} role="Διδάσκων"><InitialAssignment user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
         <Route path="/student" element={<PrivateRoute user={user} role="Φοιτητής"><Student user={user} topics={topics} /></PrivateRoute>} />
-        <Route path="/admin" element={<PrivateRoute user={user} role="Γραμματεία"><Admin /></PrivateRoute>} />
+        <Route path="/admin" element={<PrivateRoute user={user} role="Γραμματεία"><Admin user={user} /></PrivateRoute>} />
         {/* Redirect all other routes to login */}
         <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
@@ -2611,8 +2611,245 @@ function Student({ user, topics = [] }) {
 }
 
 // Admin/secretary dashboard
-function Admin() {
-  return <div className="p-4">Καλωσορίσατε Γραμματεία</div>;
+function Admin({ user }) {
+  const [theses, setTheses] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedThesis, setSelectedThesis] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  // Load theses on component mount
+  useEffect(() => {
+    if (user) {
+      handleLoadTheses();
+    }
+  }, [user]);
+
+  const handleLoadTheses = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      console.log('Loading theses for admin, user:', user);
+      const res = await fetch("/api/admin/theses", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      console.log('Response status:', res.status);
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Theses data:', data);
+        setTheses(data);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Error response:', errorData);
+        setError("Αποτυχία φόρτωσης διπλωματικών.");
+      }
+    } catch (err) {
+      console.error('Exception loading theses:', err);
+      setError("Αποτυχία φόρτωσης διπλωματικών.");
+    }
+    setLoading(false);
+  };
+
+  const handleShowThesisDetails = async (thesis) => {
+    setSelectedThesis(thesis);
+    setShowDetails(true);
+  };
+
+  const handleCloseDetails = () => {
+    setShowDetails(false);
+    setSelectedThesis(null);
+  };
+
+  // Calculate time since assignment
+  const timeSince = (dateString) => {
+    if (!dateString) return "--";
+    const now = new Date();
+    const then = new Date(dateString);
+    const diff = now - then;
+    if (isNaN(diff) || diff < 0) return "--";
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const months = Math.floor(days / 30);
+    const years = Math.floor(months / 12);
+    if (years > 0) return `${years} έτη, ${months % 12} μήνες`;
+    if (months > 0) return `${months} μήνες, ${days % 30} μέρες`;
+    if (days > 0) return `${days} μέρες`;
+    return "Λιγότερο από μέρα";
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
+      
+      {/* Προβολή Διπλωματικης Εργασιας */}
+      <div className="border p-4 rounded bg-[#1f293a]">
+        <h3 className="text-lg font-bold mb-4" style={{ color: "#0ef" }}>Προβολή Διπλωματικης Εργασιας</h3>
+        <p className="text-white mb-4">Προβάλλονται όλες οι Διπλωματικες Εργασιες.</p>
+        
+        {loading && <div className="text-white">Φόρτωση...</div>}
+        {error && <div className="text-red-500 mb-4">{error}</div>}
+        
+        {!loading && theses.length === 0 && (
+          <div className="text-white">Δεν βρέθηκαν διπλωματικές εργασίες.</div>
+        )}
+        
+        {!loading && theses.length > 0 && (
+          <div className="space-y-3">
+            {theses.map(thesis => (
+              <div key={thesis.id} className="border p-3 rounded bg-gray-800">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-white mb-2">{thesis.title}</h4>
+                    <p className="text-white text-sm mb-2">{thesis.summary}</p>
+                    <div className="text-sm text-gray-300">
+                      <p><strong>Φοιτητής:</strong> {thesis.student_name} {thesis.student_surname} ({thesis.student_number})</p>
+                      <p><strong>Επιβλέπων:</strong> {thesis.supervisor_name} {thesis.supervisor_surname}</p>
+                      <p><strong>Κατάσταση:</strong> <span style={{ color: "#0ef", fontWeight: "bold" }}>{thesis.status}</span></p>
+                      {thesis.official_assignment_date && (
+                        <p><strong>Χρόνος από ανάθεση:</strong> {timeSince(thesis.official_assignment_date)}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded ml-4"
+                    onClick={() => handleShowThesisDetails(thesis)}
+                  >
+                    Λεπτομέρειες
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal με λεπτομέρειες διπλωματικής */}
+      {showDetails && selectedThesis && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-4xl w-full relative modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <button className="absolute top-2 right-2 text-gray-500" onClick={handleCloseDetails}>&times;</button>
+            <h3 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Λεπτομέρειες Διπλωματικής Εργασίας</h3>
+            
+            <div className="space-y-4">
+              {/* Βασικές πληροφορίες */}
+              <div className="border p-4 rounded bg-gray-800">
+                <h4 className="font-bold text-white mb-3">Βασικές Πληροφορίες</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-white">
+                  <div>
+                    <p><strong>Τίτλος:</strong> {selectedThesis.title}</p>
+                    <p><strong>Φοιτητής:</strong> {selectedThesis.student_name} {selectedThesis.student_surname}</p>
+                    <p><strong>Αριθμός Μητρώου:</strong> {selectedThesis.student_number}</p>
+                    <p><strong>Επιβλέπων:</strong> {selectedThesis.supervisor_name} {selectedThesis.supervisor_surname}</p>
+                  </div>
+                  <div>
+                    <p><strong>Κατάσταση:</strong> {selectedThesis.status}</p>
+                    <p><strong>Ημ/νία Δημιουργίας:</strong> {selectedThesis.created_at ? new Date(selectedThesis.created_at).toLocaleDateString("el-GR") : "--"}</p>
+                    <p><strong>Επίσημη Ανάθεση:</strong> {selectedThesis.official_assignment_date ? new Date(selectedThesis.official_assignment_date).toLocaleDateString("el-GR") : "--"}</p>
+                    {selectedThesis.official_assignment_date && (
+                      <p><strong>Χρόνος από ανάθεση:</strong> {timeSince(selectedThesis.official_assignment_date)}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Περιγραφή */}
+              <div className="border p-4 rounded bg-gray-800">
+                <h4 className="font-bold text-white mb-3">Περιγραφή</h4>
+                <p className="text-white">{selectedThesis.summary}</p>
+              </div>
+
+              {/* Μέλη Επιτροπής */}
+              <div className="border p-4 rounded bg-gray-800">
+                <h4 className="font-bold text-white mb-3">Μέλη Τριμελούς Επιτροπής</h4>
+                {selectedThesis.committee && selectedThesis.committee.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedThesis.committee.map((member, index) => (
+                      <div key={index} className="text-white p-2 bg-gray-700 rounded">
+                        <p><strong>{member.name} {member.surname}</strong> ({member.role})</p>
+                        {member.response_date && (
+                          <p className="text-sm text-gray-300">
+                            Απάντηση: {new Date(member.response_date).toLocaleDateString("el-GR")}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-white">Δεν έχουν οριστεί μέλη επιτροπής ακόμα.</p>
+                )}
+              </div>
+
+              {/* Πρόχειρη Ανάρτηση */}
+              {selectedThesis.draft_submission && (
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-bold text-white mb-3">Πρόχειρη Ανάρτηση</h4>
+                  <div className="text-white">
+                    {selectedThesis.draft_submission.file_path && (
+                      <p><strong>Αρχείο:</strong> {selectedThesis.draft_submission.file_path}</p>
+                    )}
+                    {selectedThesis.draft_submission.external_links && (
+                      <div>
+                        <p><strong>Σύνδεσμοι:</strong></p>
+                        <ul className="list-disc ml-6">
+                          {selectedThesis.draft_submission.external_links.split(/\r?\n/).map((link, i) => link.trim() && (
+                            <li key={i}>
+                              <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">{link}</a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-300 mt-2">
+                      Ανέβηκε: {selectedThesis.draft_submission.uploaded_at ? new Date(selectedThesis.draft_submission.uploaded_at).toLocaleString("el-GR") : "--"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Λεπτομέρειες Παρουσίασης */}
+              {selectedThesis.presentation_details && (
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-bold text-white mb-3">Λεπτομέρειες Παρουσίασης</h4>
+                  <div className="text-white">
+                    <p><strong>Ημερομηνία & Ώρα:</strong> {new Date(selectedThesis.presentation_details.presentation_date).toLocaleString("el-GR")}</p>
+                    <p><strong>Τρόπος:</strong> {selectedThesis.presentation_details.mode}</p>
+                    <p><strong>Τόπος/Σύνδεσμος:</strong> {selectedThesis.presentation_details.location_or_link}</p>
+                    {selectedThesis.presentation_details.announcement_text && (
+                      <div className="mt-3">
+                        <p><strong>Κείμενο Ανακοίνωσης:</strong></p>
+                        <div className="p-3 bg-gray-700 rounded mt-2" style={{ color: "#fff" }}>
+                          {selectedThesis.presentation_details.announcement_text}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Βαθμοί */}
+              {selectedThesis.grades && selectedThesis.grades.length > 0 && (
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-bold text-white mb-3">Βαθμοί</h4>
+                  <div className="space-y-2">
+                    {selectedThesis.grades.map((grade, index) => (
+                      <div key={index} className="text-white p-2 bg-gray-700 rounded">
+                        <p><strong>{grade.name} {grade.surname}:</strong> {grade.grade}/10</p>
+                        <div className="text-sm text-gray-300 mt-1">
+                          <p>Ποιότητα: {grade.criteria.quality}/10 (60%)</p>
+                          <p>Χρονικό Διάστημα: {grade.criteria.timeline}/10 (15%)</p>
+                          <p>Πληρότητα: {grade.criteria.completeness}/10 (15%)</p>
+                          <p>Παρουσίαση: {grade.criteria.presentation}/10 (10%)</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default App;
