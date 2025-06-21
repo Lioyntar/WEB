@@ -806,3 +806,42 @@ button:focus {
   100% { transform: rotate(360deg); }
 }
 
+/* Logout button styles */
+.logout-button {
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: #dc2626;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 0 0 6px 0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 1000;
+  transition: background-color 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.logout-button:hover {
+  background: #b91c1c;
+}
+
+.logout-button:focus {
+  outline: 2px solid #0ef;
+  outline-offset: 2px;
+}
+
+/* Mobile responsive for logout button */
+@media (max-width: 768px) {
+  .logout-button {
+    top: 0;
+    left: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
+
+/* Add margin for Προσθήκη button */
+

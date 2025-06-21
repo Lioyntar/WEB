@@ -114,11 +114,11 @@ function App() {
         {/* Public announcements route */}
         <Route path="/announcements" element={<PublicAnnouncements />} />
         {/* Protected routes for each role */}
-        <Route path="/teacher" element={<PrivateRoute user={user} role="Διδάσκων"><Teacher user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
+        <Route path="/teacher" element={<PrivateRoute user={user} role="Διδάσκων"><Teacher user={user} topics={topics} setTopics={setTopics} setUser={setUser} /></PrivateRoute>} />
         <Route path="/teacher/topics" element={<PrivateRoute user={user} role="Διδάσκων"><TopicManagement user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
         <Route path="/teacher/assign" element={<PrivateRoute user={user} role="Διδάσκων"><InitialAssignment user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
-        <Route path="/student" element={<PrivateRoute user={user} role="Φοιτητής"><Student user={user} topics={topics} /></PrivateRoute>} />
-        <Route path="/admin" element={<PrivateRoute user={user} role="Γραμματεία"><Admin user={user} /></PrivateRoute>} />
+        <Route path="/student" element={<PrivateRoute user={user} role="Φοιτητής"><Student user={user} topics={topics} setUser={setUser} /></PrivateRoute>} />
+        <Route path="/admin" element={<PrivateRoute user={user} role="Γραμματεία"><Admin user={user} setUser={setUser} /></PrivateRoute>} />
         {/* Redirect all other routes to login */}
         <Route path="*" element={<Navigate to="/login" />} />
       </Routes>
@@ -361,7 +361,7 @@ function PrivateRoute({ user, role, children }) {
 }
 
 // Teacher dashboard
-function Teacher({ user, topics, setTopics }) {
+function Teacher({ user, topics, setTopics, setUser }) {
   const navigate = useNavigate();
 
   // State for invitations modal
@@ -897,6 +897,17 @@ function Teacher({ user, topics, setTopics }) {
 
   return (
     <div className="p-4 space-y-4" id="main-content">
+      {/* Logout button - top left */}
+      <button 
+        className="logout-button"
+        onClick={() => {
+          setUser(null);
+          navigate("/login");
+        }}
+      >
+        Αποσύνδεση
+      </button>
+      
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
       {/* Navigation buttons */}
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
@@ -1121,7 +1132,7 @@ function Teacher({ user, topics, setTopics }) {
                             })
                           }
                         >
-                          Διαγραφή διπλωματικής
+                          Ακύρωση διπλωματικής
                         </button>
                       )}
                       {/* ΝΕΟ: Κουμπί Θέσε ως υπό εξέταση */}
@@ -2206,7 +2217,9 @@ function timeSince(dateString) {
 }
 
 // Student dashboard
-function Student({ user, topics = [] }) {
+function Student({ user, topics = [], setUser }) {
+  const navigate = useNavigate();
+  
   // Show only topics assigned to this student
   const assignedTopics = (topics || []).filter(
     t => t.assignedTo === user.student_number
@@ -2785,6 +2798,17 @@ function Student({ user, topics = [] }) {
 
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4" id="main-content">
+      {/* Logout button - top left */}
+      <button 
+        className="logout-button"
+        onClick={() => {
+          setUser(null);
+          navigate("/login");
+        }}
+      >
+        Αποσύνδεση
+      </button>
+      
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
       {/* Ειδοποίηση για περατωμένες διπλωματικές */}
       {assignedTopic && (assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "περατωμένη") && (
@@ -3359,7 +3383,9 @@ function Student({ user, topics = [] }) {
 }
 
 // Admin/secretary dashboard
-function Admin({ user }) {
+function Admin({ user, setUser }) {
+  const navigate = useNavigate();
+  
   const [theses, setTheses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -3712,6 +3738,17 @@ function Admin({ user }) {
 
   return (
     <div className="p-4 space-y-4" id="main-content">
+      {/* Logout button - top left */}
+      <button 
+        className="logout-button"
+        onClick={() => {
+          setUser(null);
+          navigate("/login");
+        }}
+      >
+        Αποσύνδεση
+      </button>
+      
       <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
       
       {/* Προβολή Διπλωματικης Εργασιας */}
