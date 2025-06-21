@@ -1965,14 +1965,18 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
     
     // Get thesis details
     const [thesisRows] = await conn.execute(
-      `SELECT th.id, th.status, th.official_assignment_date, th.final_grade,
-              s.name as student_name, s.surname as student_surname, s.student_number,
-              t.title as thesis_title,
-              p.name as supervisor_name, p.surname as supervisor_surname
+      `SELECT 
+         th.id, th.status, th.official_assignment_date, th.final_grade, th.gs_number,
+         th.supervisor_id,
+         s.name as student_name, s.surname as student_surname, s.student_number,
+         t.title as thesis_title,
+         p.name as supervisor_name, p.surname as supervisor_surname,
+         pd.presentation_date, pd.location_or_link
        FROM theses th
-       JOIN students s ON th.student_id = s.id
-       JOIN thesis_topics t ON th.topic_id = t.id
-       JOIN professors p ON th.supervisor_id = p.id
+       LEFT JOIN students s ON th.student_id = s.id
+       LEFT JOIN thesis_topics t ON th.topic_id = t.id
+       LEFT JOIN professors p ON th.supervisor_id = p.id
+       LEFT JOIN presentation_details pd ON th.id = pd.thesis_id
        WHERE th.id = ?`,
       [thesisId]
     );
@@ -1984,87 +1988,105 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
     
     const thesis = thesisRows[0];
     
-    // Get all grades for this thesis
+    // Get all grades and committee members
     const [gradeRows] = await conn.execute(
-      `SELECT g.grade, g.criteria, g.created_at, p.name, p.surname, p.department
+      `SELECT 
+         g.grade,
+         p.id as professor_id, p.name, p.surname,
+         (CASE WHEN p.id = ? THEN 'Επιβλέπων' ELSE 'Μέλος' END) as role
        FROM grades g
        JOIN professors p ON g.professor_id = p.id
        WHERE g.thesis_id = ?
-       ORDER BY p.id`,
-      [thesisId]
+       ORDER BY role ASC, p.id`,
+      [thesis.supervisor_id, thesisId]
     );
     
-    const grades = gradeRows.map(row => ({
-      ...row,
-      criteria: typeof row.criteria === 'string' ? JSON.parse(row.criteria) : row.criteria
-    }));
-    
-    const totalGrade = grades.reduce((sum, grade) => sum + parseFloat(grade.grade), 0);
-    const averageGrade = grades.length > 0 ? (totalGrade / grades.length).toFixed(2) : 0;
+    const committee = gradeRows;
+    const supervisor = committee.find(c => c.role === 'Επιβλέπων') || { name: thesis.supervisor_name, surname: thesis.supervisor_surname };
+    const presentationDate = new Date(thesis.presentation_date);
     
     const html = `
 <!DOCTYPE html>
 <html lang="el">
 <head>
     <meta charset="UTF-8">
-    <title>Πρακτικό Εξέτασης</title>
+    <title>Πρακτικό Εξέτασης Δ.Ε.</title>
     <style>
         body { font-family: 'Times New Roman', serif; line-height: 1.6; margin: 40px; color: #333; }
         .container { max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ccc; }
-        .header { text-align: center; margin-bottom: 40px; }
-        h1, h2 { text-align: center; }
+        .header, .title { text-align: center; font-weight: bold; }
+        h1, h2, h3 { text-align: center; margin: 5px 0; }
+        p { margin: 10px 0; }
+        .dotted { border-bottom: 1px dotted #333; }
+        .signature-list { padding-left: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .info-table td:first-child { font-weight: bold; width: 200px; }
-        .signatures { margin-top: 60px; }
-        .signature { display: inline-block; width: 30%; text-align: center; margin-top: 40px; }
-        .signature p { border-top: 1px solid #333; padding-top: 5px; }
-        .final-grade { text-align: right; font-size: 1.2em; font-weight: bold; margin-top: 20px; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>ΕΘΝΙΚΟ ΚΑΙ ΚΑΠΟΔΙΣΤΡΙΑΚΟ ΠΑΝΕΠΙΣΤΗΜΙΟ ΑΘΗΝΩΝ</h2>
-            <h3>ΤΜΗΜΑ ΠΛΗΡΟΦΟΡΙΚΗΣ ΚΑΙ ΤΗΛΕΠΙΚΟΙΝΩΝΙΩΝ</h3>
+            <p>ΠΑΡΑΡΤΗΜΑ 1 (υπόδειγμα πρακτικού εξέτασης Δ.Ε.)</p>
+            <h3>ΠΡΟΓΡΑΜΜΑ ΣΠΟΥΔΩΝ</h3>
+            <h3>"ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ"</h3>
         </div>
-        <h1>ΠΡΑΚΤΙΚΟ ΕΞΕΤΑΣΗΣ ΔΙΠΛΩΜΑΤΙΚΗΣ ΕΡΓΑΣΙΑΣ</h1>
-        <table class="info-table">
-            <tr><td>Ημερομηνία Εξέτασης:</td><td>${new Date().toLocaleDateString('el-GR')}</td></tr>
-            <tr><td>Ονοματεπώνυμο Φοιτητή/τριας:</td><td>${thesis.student_name} ${thesis.student_surname}</td></tr>
-            <tr><td>Αριθμός Μητρώου:</td><td>${thesis.student_number}</td></tr>
-            <tr><td>Τίτλος Διπλωματικής Εργασίας:</td><td>${thesis.thesis_title}</td></tr>
-            <tr><td>Επιβλέπων Καθηγητής:</td><td>${thesis.supervisor_name} ${thesis.supervisor_surname}</td></tr>
-        </table>
-        <h2>ΒΑΘΜΟΛΟΓΙΑ</h2>
+        
+        <div class="title">
+            <h2>ΠΡΑΚΤΙΚΟ ΣΥΝΕΔΡΙΑΣΗΣ</h2>
+            <h2>ΤΗΣ ΤΡΙΜΕΛΟΥΣ ΕΠΙΤΡΟΠΗΣ</h2>
+            <h2>ΓΙΑ ΤΗΝ ΠΑΡΟΥΣΙΑΣΗ ΚΑΙ ΚΡΙΣΗ ΤΗΣ ΔΙΠΛΩΜΑΤΙΚΗΣ ΕΡΓΑΣΙΑΣ</h2>
+        </div>
+        
+        <p>του/της φοιτητή/φοτήτρια κ. <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span></p>
+
+        <p>Η συνεδρίαση πραγματοποιήθηκε στην αίθουσα <span class="dotted">${thesis.location_or_link || '................'}</span>, στις <span class="dotted">${presentationDate.toLocaleDateString('el-GR') || '................'}</span>, ημέρα <span class="dotted">${presentationDate.toLocaleDateString('el-GR', { weekday: 'long' }) || '................'}</span> και ώρα <span class="dotted">${presentationDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' }) || '................'}</span>.</p>
+        
+        <p>Στην συνεδρίαση είναι παρόντα τα μέλη της Τριμελούς Επιτροπής, κ.κ.:</p>
+        <ol class="signature-list">
+            ${committee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
+        </ol>
+        
+        <p>οι οποίοι ορίσθηκαν από την Συνέλευση του ΤΜΗΥΠ, στην συνεδρίαση της με αριθμό <span class="dotted">${thesis.gs_number || '................'}</span>.</p>
+        
+        <p>Ο/Η φοιτητής/φοιτήτρια κ. <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span> ανέπτυξε το θέμα της Διπλωματικής του/της Εργασίας, με τίτλο "<span class="dotted">${thesis.thesis_title}</span>".</p>
+        
+        <p>Στην συνέχεια υποβλήθηκαν ερωτήσεις στον υποψήφιο από τα μέλη της Τριμελούς Επιτροπής και τους άλλους παρευρισκόμενους, προκειμένου να διαμορφώσουν σαφή άποψη για το περιεχόμενο της εργασίας, για την επιστημονική συγκρότηση του μεταπτυχιακού φοιτητή.</p>
+        
+        <p>Μετά το τέλος της ανάπτυξης της εργασίας του και των ερωτήσεων, ο υποψήφιος αποχωρεί.</p>
+        
+        <p>Ο Επιβλέπων καθηγητής κ. <span class="dotted">${supervisor.name} ${supervisor.surname}</span>, προτείνει στα μέλη της Τριμελούς Επιτροπής, να ψηφίσουν για το αν εγκρίνεται η διπλωματική εργασία του <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span>.</p>
+        
+        <p>Τα μέλη της Τριμελούς Επιτροπής, ψηφίζουν κατ' αλφαβητική σειρά:</p>
+        <ol class="signature-list">
+           ${committee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
+        </ol>
+        
+        <p>υπέρ της εγκρίσεως της Διπλωματικής Εργασίας του φοιτητή <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span>, επειδή θεωρούν επιστημονικά επαρκή και το περιεχόμενό της ανταποκρίνεται στο θέμα που του δόθηκε.</p>
+        
+        <p>Μετά της έγκριση, ο εισηγητής κ. <span class="dotted">${supervisor.name} ${supervisor.surname}</span>, προτείνει στα μέλη της Τριμελούς Επιτροπής, να απονεμηθεί στο/στη φοιτητή/τρια κ. <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span> ο βαθμός <span class="dotted">${thesis.final_grade}</span>.</p>
+
+        <p>Τα μέλη της Τριμελούς Επιτροπής, απονέμουν την παρακάτω βαθμολογία:</p>
         <table>
             <thead>
                 <tr>
-                    <th>Μέλος Εξεταστικής Επιτροπής</th>
-                    <th>Βαθμός (0-10)</th>
+                    <th>ΟΝΟΜΑΤΕΠΩΝΥΜΟ</th>
+                    <th>ΙΔΙΟΤΗΤΑ</th>
+                    <th>ΒΑΘΜΟΣ</th>
                 </tr>
             </thead>
             <tbody>
-                ${grades.map(g => `
+                ${committee.map(m => `
                 <tr>
-                    <td>${g.name} ${g.surname}</td>
-                    <td>${g.grade}</td>
+                    <td>${m.name} ${m.surname}</td>
+                    <td>${m.role}</td>
+                    <td>${m.grade}</td>
                 </tr>
                 `).join('')}
             </tbody>
         </table>
-        <div class="final-grade">
-            Τελικός Βαθμός: ${averageGrade}
-        </div>
-        <div class="signatures">
-            <p>Η Εξεταστική Επιτροπή</p>
-            ${grades.map(g => `
-            <div class="signature">
-                <p>${g.name} ${g.surname}</p>
-            </div>
-            `).join('')}
-        </div>
+
+        <p>Μετά την έγκριση και την απονομή του βαθμού <span class="dotted">${thesis.final_grade}</span>, η Τριμελής Επιτροπή, προτείνει να προχωρήσει στην διαδικασία για να ανακηρύξει τον κ. <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span>, σε διπλωματούχο του Προγράμματος Σπουδών του «ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ ΠΑΝΕΠΙΣΤΗΜΙΟΥ ΠΑΤΡΩΝ» και να του απονέμει το Δίπλωμα Μηχανικού Η/Υ το οποίο αναγνωρίζεται ως Ενιαίος Τίτλος Σπουδών Μεταπτυχιακού Επιπέδου.</p>
     </div>
 </body>
 </html>`;
@@ -2881,114 +2903,178 @@ app.get('/api/public/announcements', async (req, res) => {
       format = 'json' 
     } = req.query;
     
-    let query = `
-      SELECT 
-        t.id as thesis_id,
-        t.title as thesis_title,
-        s.name as student_name,
-        s.surname as student_surname,
-        s.student_number,
-        p.name as supervisor_name,
-        p.surname as supervisor_surname,
-        pd.presentation_date,
-        pd.mode,
-        pd.location_or_link,
-        pd.announcement_text,
-        pd.created_at
+    // Step 1: Get the list of completed theses within the date range
+    let initialQuery = `
+      SELECT t.id as thesis_id
       FROM theses t
-      JOIN students s ON t.student_id = s.id
-      JOIN professors p ON t.supervisor_id = p.id
       JOIN presentation_details pd ON t.id = pd.thesis_id
-      WHERE t.status = 'υπό εξέταση' AND pd.presentation_date IS NOT NULL
+      WHERE t.status = 'περατωμένη' AND pd.presentation_date IS NOT NULL
     `;
     
     const params = [];
-    
-    // Add date range filtering if provided
     if (start_date) {
-      query += ' AND pd.presentation_date >= ?';
+      initialQuery += ' AND DATE(pd.presentation_date) >= ?';
       params.push(start_date);
     }
-    
     if (end_date) {
-      query += ' AND pd.presentation_date <= ?';
+      initialQuery += ' AND DATE(pd.presentation_date) <= ?';
       params.push(end_date);
     }
+    initialQuery += ' ORDER BY pd.presentation_date ASC';
     
-    query += ' ORDER BY pd.presentation_date ASC';
-    
-    const [rows] = await conn.execute(query, params);
-    
-    // Format the data
-    const announcements = rows.map(row => ({
-      thesis_id: row.thesis_id,
-      thesis_title: row.thesis_title,
-      student: {
-        name: row.student_name,
-        surname: row.student_surname,
-        student_number: row.student_number
-      },
-      supervisor: {
-        name: row.supervisor_name,
-        surname: row.supervisor_surname
-      },
-      presentation: {
-        date: row.presentation_date,
-        mode: row.mode,
-        location_or_link: row.location_or_link,
-        announcement_text: row.announcement_text
-      },
-      created_at: row.created_at
-    }));
-    
-    await conn.end();
-    
-    // Return in requested format
+    const [thesesList] = await conn.execute(initialQuery, params);
+
+    // Step 2: For each thesis, fetch details and generate the document
+    const results = [];
+    for (const thesisEntry of thesesList) {
+        const thesisId = thesisEntry.thesis_id;
+
+        // Fetch main thesis data
+        const [thesisRows] = await conn.execute(
+          `SELECT 
+             th.id, th.status, th.final_grade, th.gs_number, th.supervisor_id,
+             s.name as student_name, s.surname as student_surname,
+             t.title as thesis_title,
+             p.name as supervisor_name, p.surname as supervisor_surname,
+             pd.presentation_date, pd.location_or_link
+           FROM theses th
+           LEFT JOIN students s ON th.student_id = s.id
+           LEFT JOIN thesis_topics t ON th.topic_id = t.id
+           LEFT JOIN professors p ON th.supervisor_id = p.id
+           LEFT JOIN presentation_details pd ON th.id = pd.thesis_id
+           WHERE th.id = ?`,
+          [thesisId]
+        );
+
+        if (!thesisRows.length) continue;
+        const thesis = thesisRows[0];
+        const supervisorId = thesis.supervisor_id;
+
+        // Fetch committee members and their grades
+        const [committeeAndGrades] = await conn.execute(
+            `SELECT g.grade, p.id as professor_id, p.name, p.surname
+             FROM grades g
+             JOIN professors p ON g.professor_id = p.id
+             WHERE g.thesis_id = ?`,
+            [thesisId]
+        );
+        
+        const presentationDate = new Date(thesis.presentation_date);
+        
+        const fullCommittee = committeeAndGrades.map(p => ({
+            name: p.name,
+            surname: p.surname,
+            role: p.professor_id === supervisorId ? 'Επιβλέπων' : 'Μέλος',
+            grade: parseFloat(p.grade).toFixed(2)
+        }));
+
+        const committeeListText = fullCommittee.map((m, i) => `${i + 1}. ${m.name} ${m.surname}`).join('\n');
+        
+        const tableHeader = `ΟΝΟΜΑΤΕΠΩΝΥΜΟ\t\t\tΙΔΙΟΤΗΤΑ\n`;
+        const tableRows = fullCommittee.map(m => `${(m.name + ' ' + m.surname).padEnd(30, ' ')}\t${m.role}`).join('\n');
+
+        const documentText = `ΠΡΟΓΡΑΜΜΑ ΣΠΟΥΔΩΝ
+«ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ»
+
+ΠΡΑΚΤΙΚΟ ΣΥΝΕΔΡΙΑΣΗΣ
+ΤΗΣ ΤΡΙΜΕΛΟΥΣ ΕΠΙΤΡΟΠΗΣ
+ΓΙΑ ΤΗΝ ΠΑΡΟΥΣΙΑΣΗ ΚΑΙ ΚΡΙΣΗ ΤΗΣ ΔΙΠΛΩΜΑΤΙΚΗΣ ΕΡΓΑΣΙΑΣ
+
+του/της φοιτητή/φοτήτρια κ. ${thesis.student_name || '................'} ${thesis.student_surname || ''}
+
+Η συνεδρίαση πραγματοποιήθηκε στην αίθουσα ${thesis.location_or_link || '................'}, στις ${presentationDate.toLocaleDateString('el-GR') || '................'}, ημέρα ${presentationDate.toLocaleDateString('el-GR', { weekday: 'long' }) || '................'} και ώρα ${presentationDate.toLocaleTimeString('el-GR', { hour: '2-digit', minute: '2-digit' }) || '................'}.
+
+Στην συνεδρίαση είναι παρόντα τα μέλη της Τριμελούς Επιτροπής, κ.κ.:
+${committeeListText || '1................\n2................\n3................'}
+
+οι οποίοι ορίσθηκαν από την Συνέλευση του ΤΜΗΥΠ, στην συνεδρίαση της με αριθμό ${thesis.gs_number || '..........'}.
+
+Ο/Η φοιτητής/φοιτήτρια κ. ${thesis.student_name || '................'} ${thesis.student_surname || ''} ανέπτυξε το θέμα της Διπλωματικής του/της Εργασίας, με τίτλο «${thesis.thesis_title || '................'}».
+
+Στην συνέχεια υποβλήθηκαν ερωτήσεις στον υποψήφιο από τα μέλη της Τριμελούς Επιτροπής και τους άλλους παρευρισκόμενους, προκειμένου να διαμορφώσουν σαφή άποψη για το περιεχόμενο της εργασίας, για την επιστημονική συγκρότηση του μεταπτυχιακού φοιτητή.
+        
+Μετά το τέλος της ανάπτυξης της εργασίας του και των ερωτήσεων, ο υποψήφιος αποχωρεί.
+        
+Ο Επιβλέπων καθηγητής κ. ${thesis.supervisor_name || ''} ${thesis.supervisor_surname || ''}, προτείνει στα μέλη της Τριμελούς Επιτροπής, να ψηφίσουν για το αν εγκρίνεται η διπλωματική εργασία του ${thesis.student_name} ${thesis.student_surname}.
+        
+Τα μέλη της Τριμελούς Επιτροπής, ψηφίζουν κατ' αλφαβητική σειρά:
+${committeeListText}
+        
+υπέρ της εγκρίσεως της Διπλωματικής Εργασίας του φοιτητή ${thesis.student_name} ${thesis.student_surname}, επειδή θεωρούν επιστημονικά επαρκή και το περιεχόμενό της ανταποκρίνεται στο θέμα που του δόθηκε.
+        
+Μετά της έγκριση, ο εισηγητής κ. ${thesis.supervisor_name || ''} ${thesis.supervisor_surname || ''}, προτείνει στα μέλη της Τριμελούς Επιτροπής, να απονεμηθεί στο/στη φοιτητή/τρια κ. ${thesis.student_name} ${thesis.student_surname} ο βαθμός ${thesis.final_grade}.
+
+Τα μέλη της Τριμελούς Επιτροπής, απονέμουν την παρακάτω βαθμολογία:
+<RATING_TABLE>
+
+Μετά την έγκριση και την απονομή του βαθμού ${thesis.final_grade}, η Τριμελής Επιτροπή, προτείνει να προχωρήσει στην διαδικασία για να ανακηρύξει τον κ. ${thesis.student_name} ${thesis.student_surname}, σε διπλωματούχο του Προγράμματος Σπουδών του «ΤΜΗΜΑΤΟΣ ΜΗΧΑΝΙΚΩΝ, ΗΛΕΚΤΡΟΝΙΚΩΝ ΥΠΟΛΟΓΙΣΤΩΝ ΚΑΙ ΠΛΗΡΟΦΟΡΙΚΗΣ ΠΑΝΕΠΙΣΤΗΜΙΟΥ ΠΑΤΡΩΝ» και να του απονέμει το Δίπλωμα Μηχανικού Η/Υ το οποίο αναγνωρίζεται ως Ενιαίος Τίτλος Σπουδών Μεταπτυχιακού Επιπέδου.`;
+        
+        // Construct the final ratings table separately for better formatting control
+        const ratingsHeader = `ΟΝΟΜΑΤΕΠΩΝΥΜΟ`.padEnd(35) + `ΙΔΙΟΤΗΤΑ`.padEnd(20) + `ΒΑΘΜΟΣ\n`;
+        const ratingsBody = fullCommittee.map(m => 
+            `${(m.name + ' ' + m.surname).padEnd(35, ' ')}${m.role.padEnd(20, ' ')}${m.grade}`
+        ).join('\n');
+        
+        const finalDocument = documentText.replace(/<RATING_TABLE>[\s\S]*<\/RATING_TABLE>/, ratingsHeader + ratingsBody);
+
+        results.push({
+            thesis_id: thesisId,
+            document_text: finalDocument.trim()
+        });
+    }
+
+    // Step 3: Return in requested format
+    // ... same as before
     if (format.toLowerCase() === 'xml') {
-      res.setHeader('Content-Type', 'application/xml');
-      
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
       xml += '<announcements>\n';
-      
-      announcements.forEach(announcement => {
+      results.forEach(result => {
         xml += '  <announcement>\n';
-        xml += `    <thesis_id>${announcement.thesis_id}</thesis_id>\n`;
-        xml += `    <thesis_title><![CDATA[${announcement.thesis_title}]]></thesis_title>\n`;
-        xml += '    <student>\n';
-        xml += `      <name>${announcement.student.name}</name>\n`;
-        xml += `      <surname>${announcement.student.surname}</surname>\n`;
-        xml += `      <student_number>${announcement.student.student_number}</student_number>\n`;
-        xml += '    </student>\n';
-        xml += '    <supervisor>\n';
-        xml += `      <name>${announcement.supervisor.name}</name>\n`;
-        xml += `      <surname>${announcement.supervisor.surname}</surname>\n`;
-        xml += '    </supervisor>\n';
-        xml += '    <presentation>\n';
-        xml += `      <date>${announcement.presentation.date}</date>\n`;
-        xml += `      <mode>${announcement.presentation.mode}</mode>\n`;
-        xml += `      <location_or_link><![CDATA[${announcement.presentation.location_or_link}]]></location_or_link>\n`;
-        if (announcement.presentation.announcement_text) {
-          xml += `      <announcement_text><![CDATA[${announcement.presentation.announcement_text}]]></announcement_text>\n`;
-        }
-        xml += '    </presentation>\n';
-        xml += `    <created_at>${announcement.created_at}</created_at>\n`;
+        xml += `    <thesis_id>${result.thesis_id}</thesis_id>\n`;
+        xml += `    <examination_minutes><![CDATA[${result.document_text}]]></examination_minutes>\n`;
         xml += '  </announcement>\n';
       });
-      
       xml += '</announcements>';
       res.send(xml);
     } else {
       // Default JSON format
-      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
       res.json({
-        total: announcements.length,
-        announcements: announcements
+        total: results.length,
+        announcements: results
       });
     }
-    
+    await conn.end();
   } catch (err) {
     await conn.end();
     console.error('Public announcements error:', err);
-    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση ανακοινώσεων.' });
+    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση ανακοινώσεων.', details: err.message });
   }
 });
+
+// THIS ENDPOINT IS NO LONGER NEEDED AND WILL BE REMOVED.
+/*
+app.get('/api/public/topics', async (req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
+  try {
+    const [rows] = await conn.execute(`
+      SELECT 
+        tt.id as topic_id,
+        tt.title,
+        tt.summary,
+        tt.created_at,
+        p.name as professor_name,
+        p.surname as professor_surname
+      FROM thesis_topics tt
+      JOIN professors p ON tt.professor_id = p.id
+      ORDER BY tt.created_at DESC
+    `);
+    res.json({ total: rows.length, topics: rows });
+    await conn.end();
+  } catch (err) {
+    await conn.end();
+    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση θεμάτων.' });
+  }
+});
+*/

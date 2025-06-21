@@ -111,6 +111,8 @@ function App() {
         <Route path="/login" element={<Login setUser={setUser} />} />
         {/* Route for logout */}
         <Route path="/logout" element={<Logout setUser={setUser} />} />
+        {/* Public announcements route */}
+        <Route path="/announcements" element={<PublicAnnouncements />} />
         {/* Protected routes for each role */}
         <Route path="/teacher" element={<PrivateRoute user={user} role="Διδάσκων"><Teacher user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
         <Route path="/teacher/topics" element={<PrivateRoute user={user} role="Διδάσκων"><TopicManagement user={user} topics={topics} setTopics={setTopics} /></PrivateRoute>} />
@@ -176,6 +178,23 @@ function Login({ setUser }) {
           </div>
           <button type="submit" className="btn">Login</button>
         </form>
+        
+        {/* Public Announcements Button */}
+        <div style={{ marginTop: "20px", textAlign: "center" }}>
+          <button 
+            type="button" 
+            className="btn" 
+            style={{ 
+              background: "transparent", 
+              border: "2px solid #0ef", 
+              color: "#0ef",
+              marginTop: "10px"
+            }}
+            onClick={() => navigate("/announcements")}
+          >
+            Δημόσιες Ανακοινώσεις Παρουσίασεων
+          </button>
+        </div>
       </div>
       {[...Array(50)].map((_, i) => (
         <span key={i} style={{ "--i": i }}></span>
@@ -194,6 +213,124 @@ function Logout({ setUser }) {
   }, []);
 
   return null; // No UI
+}
+
+// Public Announcements component
+function PublicAnnouncements() {
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [error, setError] = useState("");
+  
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const navigate = useNavigate();
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setHasSearched(true);
+    setError("");
+    setAnnouncements([]);
+    
+    try {
+      let url = `/api/public/announcements?format=json`;
+      if (startDate) url += `&start_date=${startDate}`;
+      if (endDate) url += `&end_date=${endDate}`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setAnnouncements(data.announcements || []);
+      } else {
+        const errData = await res.json();
+        setError(`Αποτυχία φόρτωσης: ${errData.error || 'Άγνωστο σφάλμα'}`);
+      }
+    } catch (err) {
+      setError("Σφάλμα δικτύου κατά τη φόρτωση των ανακοινώσεων.");
+    }
+    setLoading(false);
+  };
+
+  const downloadFile = async (format) => {
+    try {
+      let url = `/api/public/announcements?format=${format}`;
+      if (startDate) url += `&start_date=${startDate}`;
+      if (endDate) url += `&end_date=${endDate}`;
+      
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Η απάντηση του διακομιστή δεν ήταν επιτυχής.');
+
+      const blob = await res.blob();
+      saveAs(blob, `announcements.${format}`);
+    } catch (err) {
+      alert(`Αποτυχία λήψης αρχείου: ${err.message}`);
+    }
+  };
+
+  return (
+    <div className="p-4 max-w-4xl mx-auto space-y-4" id="main-content">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+        <h2 className="text-xl font-bold">Δημόσιες Ανακοινώσεις Παρουσιάσεων</h2>
+        <button onClick={() => navigate("/login")} className="bg-[#0ef] text-white px-3 py-1">Επιστροφή στο Login</button>
+      </div>
+
+      {/* Filters */}
+      <div className="border p-4 mb-4" style={{ background: "rgba(31, 41, 58, 0.8)", borderRadius: "20px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "15px", alignItems: "end" }}>
+          <div>
+            <label style={{ color: "#fff", display: "block", marginBottom: "5px" }}>Από Ημερομηνία:</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+              style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "2px solid #0ef", borderRadius: "20px", color: "#fff" }}
+            />
+          </div>
+          <div>
+            <label style={{ color: "#fff", display: "block", marginBottom: "5px" }}>Έως Ημερομηνία:</label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+              style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "2px solid #0ef", borderRadius: "20px", color: "#fff" }}
+            />
+          </div>
+          <div>
+            <button onClick={handleSearch} className="bg-[#0ef] text-white px-4 py-2" style={{ borderRadius: "20px", width: "100%" }}>
+              Αναζήτηση
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* Results Section */}
+      {hasSearched && (
+        <div className="border p-4" style={{ background: "rgba(31, 41, 58, 0.8)", borderRadius: "20px" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "20px", color: "#fff" }}>Φόρτωση...</div>
+          ) : error ? (
+            <div style={{ color: "red", textAlign: "center", padding: "10px" }}>{error}</div>
+          ) : announcements.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px", color: "#fff" }}>Δεν βρέθηκαν ανακοινώσεις για αυτό το εύρος ημερομηνιών.</div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h3 className="text-lg font-semibold" style={{ color: "#0ef" }}>Αποτελέσματα ({announcements.length})</h3>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={() => downloadFile('json')} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">Export JSON</button>
+                  <button onClick={() => downloadFile('xml')} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">Export XML</button>
+                </div>
+              </div>
+              <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                {announcements.map((ann, index) => (
+                  <div key={index} className="border p-4 mb-4" style={{ background: "rgba(44, 71, 102, 0.7)", borderRadius: "14px", borderColor: "#0ef" }}>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', color: '#fff', fontFamily: 'monospace', fontSize: '14px' }}>
+                      {ann.document_text}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Protects routes by role
@@ -3557,6 +3694,7 @@ function Admin({ user }) {
         {showThesesList && (
           <div className="mt-4">
             <p className="text-white mb-4">Προβάλλονται όλες οι Διπλωματικες Εργασιες.</p>
+            
             
             {loading && <div className="text-white">Φόρτωση...</div>}
             {error && <div className="text-red-500 mb-4">{error}</div>}
