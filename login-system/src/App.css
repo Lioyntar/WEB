@@ -639,3 +639,236 @@ h2, h3, h4, p, .input-box, button {
   margin: 4px 0;
 }
 
+/* Mobile-first responsive design */
+@media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+  
+  .login-box {
+    width: 95%;
+    max-width: 400px;
+    padding: 20px;
+  }
+  
+  .input-box {
+    margin-bottom: 15px;
+  }
+  
+  .input-box input,
+  .input-box textarea,
+  .input-box select {
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 12px 15px;
+  }
+  
+  .btn {
+    padding: 12px 20px;
+    font-size: 16px;
+    width: 100%;
+  }
+  
+  /* Modal improvements for mobile */
+  .modal-content {
+    width: 95%;
+    max-width: none;
+    margin: 10px;
+    padding: 15px;
+    max-height: 85vh;
+  }
+  
+  /* Grid improvements for mobile */
+  .grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* Button improvements for mobile */
+  button {
+    padding: 12px 16px;
+    font-size: 16px;
+    min-height: 44px; /* Touch target size */
+  }
+  
+  /* Table improvements for mobile */
+  table {
+    font-size: 12px;
+  }
+  
+  table th,
+  table td {
+    padding: 8px 4px;
+  }
+  
+  /* Form improvements for mobile */
+  .input-box label {
+    font-size: 14px;
+  }
+  
+  /* Navigation improvements for mobile */
+  .p-4 {
+    padding: 10px;
+  }
+  
+  /* Chart improvements for mobile */
+  canvas {
+    max-width: 100%;
+    height: auto !important;
+  }
+}
+
+/* Tablet responsive design */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .modal-content {
+    width: 90%;
+    max-width: 800px;
+  }
+  
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large screen improvements */
+@media (min-width: 1025px) {
+  .modal-content {
+    max-width: 1200px;
+  }
+  
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+  button:hover {
+    transform: none;
+  }
+  
+  .input-box input:focus,
+  .input-box textarea:focus,
+  .input-box select:focus {
+    transform: none;
+  }
+  
+  /* Larger touch targets */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  input[type="file"]::file-selector-button {
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .input-box input,
+  .input-box textarea,
+  .input-box select {
+    border-width: 2px;
+  }
+  
+  button {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .modal-content {
+    background-color: #1f2937;
+    color: white;
+  }
+  
+  .modal-content input,
+  .modal-content textarea,
+  .modal-content select {
+    background-color: #374151;
+    color: white;
+    border-color: #4b5563;
+  }
+}
+
+/* Print styles */
+@media print {
+  .modal-content {
+    box-shadow: none;
+    border: 1px solid #000;
+  }
+  
+  button {
+    display: none;
+  }
+  
+  .no-print {
+    display: none;
+  }
+}
+
+/* Accessibility improvements */
+.input-box input:focus,
+.input-box textarea:focus,
+.input-box select:focus {
+  outline: 2px solid #0ef;
+  outline-offset: 2px;
+}
+
+button:focus {
+  outline: 2px solid #0ef;
+  outline-offset: 2px;
+}
+
+/* Skip to content link for screen readers */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 6px;
+  background: #0ef;
+  color: #1f293a;
+  padding: 8px;
+  text-decoration: none;
+  border-radius: 4px;
+  z-index: 1000;
+}
+
+.skip-link:focus {
+  top: 6px;
+}
+
+/* Loading states for better UX */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid #0ef;
+  border-top: 2px solid transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+

@@ -67,6 +67,9 @@ function App() {
 
   return (
     <Router>
+      {/* Skip link for accessibility */}
+      <a href="#main-content" className="skip-link">Μετάβαση στο κύριο περιεχόμενο</a>
+      
       <Routes>
         {/* Route for login page */}
         <Route path="/login" element={<Login setUser={setUser} />} />
@@ -700,7 +703,7 @@ function Teacher({ user, topics, setTopics }) {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4" id="main-content">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
       {/* Navigation buttons */}
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
@@ -2436,7 +2439,7 @@ function Student({ user, topics = [] }) {
   };
 
   return (
-    <div className="p-4 max-w-2xl mx-auto space-y-4">
+    <div className="p-4 max-w-2xl mx-auto space-y-4" id="main-content">
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
       {/* Ειδοποίηση για περατωμένες διπλωματικές */}
       {assignedTopic && (assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "περατωμένη") && (
@@ -3353,7 +3356,7 @@ function Admin({ user }) {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-4" id="main-content">
       <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
       
       {/* Προβολή Διπλωματικης Εργασιας */}

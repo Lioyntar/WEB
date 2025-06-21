@@ -2669,3 +2669,126 @@ app.get('/api/teacher/statistics', authenticate, async (req, res) => {
     res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση στατιστικών.', details: err.message });
   }
 });
+
+// Public endpoint for thesis presentation announcements (no authentication required)
+app.get('/api/public/announcements', async (req, res) => {
+  const conn = await mysql.createConnection(dbConfig);
+  
+  try {
+    const { 
+      start_date, 
+      end_date, 
+      format = 'json' 
+    } = req.query;
+    
+    let query = `
+      SELECT 
+        t.id as thesis_id,
+        t.title as thesis_title,
+        s.name as student_name,
+        s.surname as student_surname,
+        s.student_number,
+        p.name as supervisor_name,
+        p.surname as supervisor_surname,
+        pd.presentation_date,
+        pd.mode,
+        pd.location_or_link,
+        pd.announcement_text,
+        pd.created_at
+      FROM theses t
+      JOIN students s ON t.student_id = s.id
+      JOIN professors p ON t.supervisor_id = p.id
+      JOIN presentation_details pd ON t.id = pd.thesis_id
+      WHERE t.status = 'υπό εξέταση' AND pd.presentation_date IS NOT NULL
+    `;
+    
+    const params = [];
+    
+    // Add date range filtering if provided
+    if (start_date) {
+      query += ' AND pd.presentation_date >= ?';
+      params.push(start_date);
+    }
+    
+    if (end_date) {
+      query += ' AND pd.presentation_date <= ?';
+      params.push(end_date);
+    }
+    
+    query += ' ORDER BY pd.presentation_date ASC';
+    
+    const [rows] = await conn.execute(query, params);
+    
+    // Format the data
+    const announcements = rows.map(row => ({
+      thesis_id: row.thesis_id,
+      thesis_title: row.thesis_title,
+      student: {
+        name: row.student_name,
+        surname: row.student_surname,
+        student_number: row.student_number
+      },
+      supervisor: {
+        name: row.supervisor_name,
+        surname: row.supervisor_surname
+      },
+      presentation: {
+        date: row.presentation_date,
+        mode: row.mode,
+        location_or_link: row.location_or_link,
+        announcement_text: row.announcement_text
+      },
+      created_at: row.created_at
+    }));
+    
+    await conn.end();
+    
+    // Return in requested format
+    if (format.toLowerCase() === 'xml') {
+      res.setHeader('Content-Type', 'application/xml');
+      
+      let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+      xml += '<announcements>\n';
+      
+      announcements.forEach(announcement => {
+        xml += '  <announcement>\n';
+        xml += `    <thesis_id>${announcement.thesis_id}</thesis_id>\n`;
+        xml += `    <thesis_title><![CDATA[${announcement.thesis_title}]]></thesis_title>\n`;
+        xml += '    <student>\n';
+        xml += `      <name>${announcement.student.name}</name>\n`;
+        xml += `      <surname>${announcement.student.surname}</surname>\n`;
+        xml += `      <student_number>${announcement.student.student_number}</student_number>\n`;
+        xml += '    </student>\n';
+        xml += '    <supervisor>\n';
+        xml += `      <name>${announcement.supervisor.name}</name>\n`;
+        xml += `      <surname>${announcement.supervisor.surname}</surname>\n`;
+        xml += '    </supervisor>\n';
+        xml += '    <presentation>\n';
+        xml += `      <date>${announcement.presentation.date}</date>\n`;
+        xml += `      <mode>${announcement.presentation.mode}</mode>\n`;
+        xml += `      <location_or_link><![CDATA[${announcement.presentation.location_or_link}]]></location_or_link>\n`;
+        if (announcement.presentation.announcement_text) {
+          xml += `      <announcement_text><![CDATA[${announcement.presentation.announcement_text}]]></announcement_text>\n`;
+        }
+        xml += '    </presentation>\n';
+        xml += `    <created_at>${announcement.created_at}</created_at>\n`;
+        xml += '  </announcement>\n';
+      });
+      
+      xml += '</announcements>';
+      res.send(xml);
+    } else {
+      // Default JSON format
+      res.setHeader('Content-Type', 'application/json');
+      res.json({
+        total: announcements.length,
+        announcements: announcements
+      });
+    }
+    
+  } catch (err) {
+    await conn.end();
+    console.error('Public announcements error:', err);
+    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση ανακοινώσεων.' });
+  }
+});
