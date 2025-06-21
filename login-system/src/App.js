@@ -2617,6 +2617,7 @@ function Admin({ user }) {
   const [error, setError] = useState("");
   const [selectedThesis, setSelectedThesis] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showThesesList, setShowThesesList] = useState(false);
 
   // Load theses on component mount
   useEffect(() => {
@@ -2660,6 +2661,10 @@ function Admin({ user }) {
     setSelectedThesis(null);
   };
 
+  const toggleThesesList = () => {
+    setShowThesesList(!showThesesList);
+  };
+
   // Calculate time since assignment
   const timeSince = (dateString) => {
     if (!dateString) return "--";
@@ -2682,42 +2687,65 @@ function Admin({ user }) {
       
       {/* Προβολή Διπλωματικης Εργασιας */}
       <div className="border p-4 rounded bg-[#1f293a]">
-        <h3 className="text-lg font-bold mb-4" style={{ color: "#0ef" }}>Προβολή Διπλωματικης Εργασιας</h3>
-        <p className="text-white mb-4">Προβάλλονται όλες οι Διπλωματικες Εργασιες.</p>
+        <div 
+          className="flex justify-between items-center cursor-pointer"
+          onClick={toggleThesesList}
+          style={{ cursor: 'pointer' }}
+        >
+          <h3 className="text-lg font-bold" style={{ color: "#0ef" }}>Προβολή Διπλωματικών Εργασιών</h3>
+          <span 
+            className="text-[#0ef] text-xl transition-transform duration-300 cursor-pointer"
+            style={{ 
+              transform: showThesesList ? 'rotate(180deg)' : 'rotate(0deg)',
+              cursor: 'pointer'
+            }}
+          >
+            ▼
+          </span>
+        </div>
         
-        {loading && <div className="text-white">Φόρτωση...</div>}
-        {error && <div className="text-red-500 mb-4">{error}</div>}
-        
-        {!loading && theses.length === 0 && (
-          <div className="text-white">Δεν βρέθηκαν διπλωματικές εργασίες.</div>
-        )}
-        
-        {!loading && theses.length > 0 && (
-          <div className="space-y-3">
-            {theses.map(thesis => (
-              <div key={thesis.id} className="border p-3 rounded bg-gray-800">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h4 className="font-bold text-white mb-2">{thesis.title}</h4>
-                    <p className="text-white text-sm mb-2">{thesis.summary}</p>
-                    <div className="text-sm text-gray-300">
-                      <p><strong>Φοιτητής:</strong> {thesis.student_name} {thesis.student_surname} ({thesis.student_number})</p>
-                      <p><strong>Επιβλέπων:</strong> {thesis.supervisor_name} {thesis.supervisor_surname}</p>
-                      <p><strong>Κατάσταση:</strong> <span style={{ color: "#0ef", fontWeight: "bold" }}>{thesis.status}</span></p>
-                      {thesis.official_assignment_date && (
-                        <p><strong>Χρόνος από ανάθεση:</strong> {timeSince(thesis.official_assignment_date)}</p>
-                      )}
+        {showThesesList && (
+          <div className="mt-4">
+            <p className="text-white mb-4">Προβάλλονται όλες οι Διπλωματικες Εργασιες.</p>
+            
+            {loading && <div className="text-white">Φόρτωση...</div>}
+            {error && <div className="text-red-500 mb-4">{error}</div>}
+            
+            {!loading && theses.length === 0 && (
+              <div className="text-white">Δεν βρέθηκαν διπλωματικές εργασίες.</div>
+            )}
+            
+            {!loading && theses.length > 0 && (
+              <div className="space-y-3">
+                {theses.map(thesis => (
+                  <div key={thesis.id} className="border p-3 rounded bg-gray-800">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h4 className="font-bold text-white mb-2">{thesis.title}</h4>
+                        <p className="text-white text-sm mb-2">{thesis.summary}</p>
+                        <div className="text-sm text-gray-300">
+                          <p><strong>Φοιτητής:</strong> {thesis.student_name} {thesis.student_surname} ({thesis.student_number})</p>
+                          <p><strong>Επιβλέπων:</strong> {thesis.supervisor_name} {thesis.supervisor_surname}</p>
+                          <p><strong>Κατάσταση:</strong> <span style={{ color: "#0ef", fontWeight: "bold" }}>{thesis.status}</span></p>
+                          {thesis.official_assignment_date && (
+                            <p><strong>Χρόνος από ανάθεση:</strong> {timeSince(thesis.official_assignment_date)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded ml-4"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleShowThesisDetails(thesis);
+                        }}
+                      >
+                        Λεπτομέρειες
+                      </button>
                     </div>
                   </div>
-                  <button
-                    className="bg-[#0ef] text-[#1f293a] px-3 py-1 rounded ml-4"
-                    onClick={() => handleShowThesisDetails(thesis)}
-                  >
-                    Λεπτομέρειες
-                  </button>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
