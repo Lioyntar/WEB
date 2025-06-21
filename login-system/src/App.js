@@ -178,24 +178,44 @@ function Login({ setUser }) {
           </div>
           <button type="submit" className="btn">Login</button>
         </form>
-        
-        {/* Public Announcements Button */}
-        <div style={{ marginTop: "20px", textAlign: "center" }}>
-          <button 
-            type="button" 
-            className="btn" 
-            style={{ 
-              background: "transparent", 
-              border: "2px solid #0ef", 
-              color: "#0ef",
-              marginTop: "10px"
-            }}
-            onClick={() => navigate("/announcements")}
-          >
-            Δημόσιες Ανακοινώσεις Παρουσίασεων
-          </button>
-        </div>
       </div>
+      
+      {/* Public Announcements Button - Moved to bottom center */}
+      <div style={{ 
+        position: "fixed", 
+        bottom: "50px", 
+        left: "50%", 
+        transform: "translateX(-50%)", 
+        textAlign: "center",
+        zIndex: 1000
+      }}>
+        <button 
+          type="button" 
+          className="btn" 
+          style={{ 
+            background: "transparent", 
+            border: "2px solid #0ef", 
+            color: "#0ef",
+            padding: "12px 24px",
+            fontSize: "16px",
+            borderRadius: "25px",
+            cursor: "pointer",
+            transition: "all 0.3s ease"
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = "#0ef";
+            e.target.style.color = "#1f293a";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = "transparent";
+            e.target.style.color = "#0ef";
+          }}
+          onClick={() => navigate("/announcements")}
+        >
+          Δημόσιες Ανακοινώσεις Παρουσίασεων
+        </button>
+      </div>
+      
       {[...Array(50)].map((_, i) => (
         <span key={i} style={{ "--i": i }}></span>
       ))}
