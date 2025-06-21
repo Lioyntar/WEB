@@ -2523,3 +2523,149 @@ app.post('/api/admin/theses/:thesisId/set-completed', authenticate, async (req, 
 const plainPasswords = {
   // ... (add username: password pairs here)
 };
+
+// GET: Teacher statistics (professors only)
+app.get('/api/teacher/statistics', authenticate, async (req, res) => {
+  if (req.user.role !== 'Διδάσκων') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const conn = await mysql.createConnection(dbConfig);
+
+  try {
+    const professorId = req.user.id;
+    
+    // Get supervised theses (completed)
+    const [supervisedRows] = await conn.execute(`
+      SELECT 
+        t.id,
+        t.official_assignment_date,
+        t.final_grade,
+        t.status
+      FROM theses t
+      WHERE t.supervisor_id = ? AND t.status = 'περατωμένη'
+    `, [professorId]);
+
+    // Get committee member theses (completed)
+    const [committeeRows] = await conn.execute(`
+      SELECT 
+        t.id,
+        t.official_assignment_date,
+        t.final_grade,
+        t.status
+      FROM theses t
+      JOIN committee_members cm ON t.id = cm.thesis_id
+      WHERE cm.professor_id = ? AND t.status = 'περατωμένη'
+    `, [professorId]);
+
+    // Calculate supervised statistics
+    let supervisedStats = {
+      count: supervisedRows.length,
+      avgCompletionTime: 0,
+      avgGrade: 0
+    };
+
+    if (supervisedRows.length > 0) {
+      // Calculate average completion time (in months)
+      const completionTimes = supervisedRows
+        .filter(t => t.official_assignment_date)
+        .map(t => {
+          const assignmentDate = new Date(t.official_assignment_date);
+          const completionDate = new Date(); // Assuming completion is now
+          const diffTime = Math.abs(completionDate - assignmentDate);
+          const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
+          return diffMonths;
+        });
+
+      if (completionTimes.length > 0) {
+        supervisedStats.avgCompletionTime = (completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length).toFixed(1);
+      }
+
+      // Calculate average grade
+      const grades = supervisedRows
+        .filter(t => t.final_grade)
+        .map(t => parseFloat(t.final_grade));
+
+      if (grades.length > 0) {
+        supervisedStats.avgGrade = (grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(2);
+      }
+    }
+
+    // Calculate committee statistics
+    let committeeStats = {
+      count: committeeRows.length,
+      avgCompletionTime: 0,
+      avgGrade: 0
+    };
+
+    if (committeeRows.length > 0) {
+      // Calculate average completion time (in months)
+      const completionTimes = committeeRows
+        .filter(t => t.official_assignment_date)
+        .map(t => {
+          const assignmentDate = new Date(t.official_assignment_date);
+          const completionDate = new Date(); // Assuming completion is now
+          const diffTime = Math.abs(completionDate - assignmentDate);
+          const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
+          return diffMonths;
+        });
+
+      if (completionTimes.length > 0) {
+        committeeStats.avgCompletionTime = (completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length).toFixed(1);
+      }
+
+      // Calculate average grade
+      const grades = committeeRows
+        .filter(t => t.final_grade)
+        .map(t => parseFloat(t.final_grade));
+
+      if (grades.length > 0) {
+        committeeStats.avgGrade = (grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(2);
+      }
+    }
+
+    // Combined statistics
+    const combinedStats = {
+      count: supervisedStats.count + committeeStats.count,
+      avgCompletionTime: 0,
+      avgGrade: 0
+    };
+
+    if (combinedStats.count > 0) {
+      const allCompletionTimes = [...supervisedRows, ...committeeRows]
+        .filter(t => t.official_assignment_date)
+        .map(t => {
+          const assignmentDate = new Date(t.official_assignment_date);
+          const completionDate = new Date();
+          const diffTime = Math.abs(completionDate - assignmentDate);
+          const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30));
+          return diffMonths;
+        });
+
+      if (allCompletionTimes.length > 0) {
+        combinedStats.avgCompletionTime = (allCompletionTimes.reduce((a, b) => a + b, 0) / allCompletionTimes.length).toFixed(1);
+      }
+
+      const allGrades = [...supervisedRows, ...committeeRows]
+        .filter(t => t.final_grade)
+        .map(t => parseFloat(t.final_grade));
+
+      if (allGrades.length > 0) {
+        combinedStats.avgGrade = (allGrades.reduce((a, b) => a + b, 0) / allGrades.length).toFixed(2);
+      }
+    }
+
+    await conn.end();
+
+    res.json({
+      supervised: supervisedStats,
+      committee: committeeStats,
+      combined: combinedStats
+    });
+
+  } catch (err) {
+    await conn.end();
+    console.error('Statistics error:', err);
+    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση στατιστικών.', details: err.message });
+  }
+});

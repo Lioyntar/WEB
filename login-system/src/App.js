@@ -1,7 +1,29 @@
 import { useState, useEffect } from "react"; // React hooks for state and lifecycle
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from "react-router-dom"; // Routing components
 import { saveAs } from "file-saver"; // For file downloads (CSV/JSON)
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
 import './App.css';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
 
 // Helper function for secure file download with Authorization header
 async function downloadFileWithAuth(url, filename, token) {
@@ -245,6 +267,12 @@ function Teacher({ user, topics, setTopics }) {
     presentation: 0
   });
   const [totalGrade, setTotalGrade] = useState(0);
+
+  // --- Add state for statistics modal ---
+  const [showStatisticsModal, setShowStatisticsModal] = useState(false);
+  const [statistics, setStatistics] = useState(null);
+  const [statisticsLoading, setStatisticsLoading] = useState(false);
+  const [statisticsError, setStatisticsError] = useState("");
 
   // Load theses under assignment for management (and active and under examination ones)
   const handleShowManageTheses = async () => {
@@ -645,6 +673,32 @@ function Teacher({ user, topics, setTopics }) {
     setGradesLoading(false);
   };
 
+  // Handle statistics modal
+  const handleShowStatisticsModal = async () => {
+    setShowStatisticsModal(true);
+    setStatisticsLoading(true);
+    setStatisticsError("");
+    setStatistics(null);
+    
+    try {
+      const res = await fetch("/api/teacher/statistics", {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setStatistics(data);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setStatisticsError(err.error || "Αποτυχία φόρτωσης στατιστικών.");
+      }
+    } catch {
+      setStatisticsError("Αποτυχία φόρτωσης στατιστικών.");
+    }
+    
+    setStatisticsLoading(false);
+  };
+
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
@@ -658,7 +712,10 @@ function Teacher({ user, topics, setTopics }) {
       </button>
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
-
+      
+      <button className="bg-indigo-600 text-white px-4 py-2 rounded w-full" onClick={handleShowStatisticsModal}>
+        Προβολή Στατιστικών
+      </button>
       {/* Modal for invitations */}
       {showInvitations && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -1276,6 +1333,200 @@ function Teacher({ user, topics, setTopics }) {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Statistics Modal */}
+      {showStatisticsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 max-w-6xl w-full relative modal-content" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <button className="absolute top-2 right-2 text-gray-500" onClick={() => setShowStatisticsModal(false)}>&times;</button>
+            <h3 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Στατιστικά Διπλωματικών</h3>
+            
+            {statisticsLoading && <div className="text-white">Φόρτωση στατιστικών...</div>}
+            {statisticsError && <div className="text-red-500 mb-4">{statisticsError}</div>}
+            
+            {!statisticsLoading && statistics && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Thesis Count Chart */}
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-semibold mb-4 text-white">Συνολικό Πλήθος Διπλωματικών</h4>
+                  <Doughnut
+                    data={{
+                      labels: ['Ως Επιβλέπων', 'Ως Μέλος Τριμελούς', 'Συνολικά'],
+                      datasets: [{
+                        data: [
+                          statistics.supervised.count,
+                          statistics.committee.count,
+                          statistics.combined.count
+                        ],
+                        backgroundColor: [
+                          'rgba(54, 162, 235, 0.8)',
+                          'rgba(255, 99, 132, 0.8)',
+                          'rgba(75, 192, 192, 0.8)'
+                        ],
+                        borderColor: [
+                          'rgba(54, 162, 235, 1)',
+                          'rgba(255, 99, 132, 1)',
+                          'rgba(75, 192, 192, 1)'
+                        ],
+                        borderWidth: 2,
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: {
+                          position: 'bottom',
+                          labels: {
+                            color: 'white'
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Average Completion Time Chart */}
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-semibold mb-4 text-white">Μέσος Χρόνος Περάτωσης (μήνες)</h4>
+                  <Bar
+                    data={{
+                      labels: ['Ως Επιβλέπων', 'Ως Μέλος Τριμελούς', 'Συνολικά'],
+                      datasets: [{
+                        label: 'Μήνες',
+                        data: [
+                          parseFloat(statistics.supervised.avgCompletionTime),
+                          parseFloat(statistics.committee.avgCompletionTime),
+                          parseFloat(statistics.combined.avgCompletionTime)
+                        ],
+                        backgroundColor: [
+                          'rgba(54, 162, 235, 0.8)',
+                          'rgba(255, 99, 132, 0.8)',
+                          'rgba(75, 192, 192, 0.8)'
+                        ],
+                        borderColor: [
+                          'rgba(54, 162, 235, 1)',
+                          'rgba(255, 99, 132, 1)',
+                          'rgba(75, 192, 192, 1)'
+                        ],
+                        borderWidth: 2,
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          ticks: {
+                            color: 'white'
+                          },
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          }
+                        },
+                        x: {
+                          ticks: {
+                            color: 'white'
+                          },
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          }
+                        }
+                      },
+                      plugins: {
+                        legend: {
+                          display: false
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Average Grade Chart */}
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-semibold mb-4 text-white">Μέσος Βαθμός</h4>
+                  <Bar
+                    data={{
+                      labels: ['Ως Επιβλέπων', 'Ως Μέλος Τριμελούς', 'Συνολικά'],
+                      datasets: [{
+                        label: 'Βαθμός',
+                        data: [
+                          parseFloat(statistics.supervised.avgGrade),
+                          parseFloat(statistics.committee.avgGrade),
+                          parseFloat(statistics.combined.avgGrade)
+                        ],
+                        backgroundColor: [
+                          'rgba(54, 162, 235, 0.8)',
+                          'rgba(255, 99, 132, 0.8)',
+                          'rgba(75, 192, 192, 0.8)'
+                        ],
+                        borderColor: [
+                          'rgba(54, 162, 235, 1)',
+                          'rgba(255, 99, 132, 1)',
+                          'rgba(75, 192, 192, 1)'
+                        ],
+                        borderWidth: 2,
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          max: 10,
+                          ticks: {
+                            color: 'white'
+                          },
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          }
+                        },
+                        x: {
+                          ticks: {
+                            color: 'white'
+                          },
+                          grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                          }
+                        }
+                      },
+                      plugins: {
+                        legend: {
+                          display: false
+                        }
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Summary Statistics */}
+                <div className="border p-4 rounded bg-gray-800">
+                  <h4 className="font-semibold mb-4 text-white">Σύνοψη Στατιστικών</h4>
+                  <div className="space-y-3 text-white">
+                    <div className="p-3 bg-blue-600 rounded">
+                      <h5 className="font-semibold" style={{ color: "#0ef" }}>Ως Επιβλέπων:</h5>
+                      <p>Πλήθος: {statistics.supervised.count}</p>
+                      <p>Μέσος χρόνος: {statistics.supervised.avgCompletionTime} μήνες</p>
+                      <p>Μέσος βαθμός: {statistics.supervised.avgGrade}/10</p>
+                    </div>
+                    <div className="p-3 bg-red-600 rounded">
+                      <h5 className="font-semibold" style={{ color: "#0ef" }}>Ως Μέλος Τριμελούς:</h5>
+                      <p>Πλήθος: {statistics.committee.count}</p>
+                      <p>Μέσος χρόνος: {statistics.committee.avgCompletionTime} μήνες</p>
+                      <p>Μέσος βαθμός: {statistics.committee.avgGrade}/10</p>
+                    </div>
+                    <div className="p-3 bg-green-600 rounded">
+                      <h5 className="font-semibold" style={{ color: "#0ef" }}>Συνολικά:</h5>
+                      <p>Πλήθος: {statistics.combined.count}</p>
+                      <p>Μέσος χρόνος: {statistics.combined.avgCompletionTime} μήνες</p>
+                      <p>Μέσος βαθμός: {statistics.combined.avgGrade}/10</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
