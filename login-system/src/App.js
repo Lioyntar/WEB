@@ -1943,35 +1943,69 @@ function InitialAssignment({ user, topics = [], setTopics }) {
         </div>
         <button className="bg-[#0ef] text-[#1f293a] px-4 py-2" onClick={handleSearch}>Αναζήτηση</button>
       </div>
+      
+      {/* Show message when no topics are available */}
+      {availableTopics.length === 0 && (
+        <div className="text-gray-500 p-4 text-center">
+          Δεν υπάρχουν διαθέσιμα θέματα για ανάθεση.
+        </div>
+      )}
       {/* Search results */}
-      {filteredStudents.length > 0 && (
+      {filteredStudents.length > 0 && availableTopics.length > 0 && (
         <div>
           <h3 className="font-semibold mt-4">Αποτελέσματα:</h3>
           {filteredStudents.map(student => (
             <div key={student.username} className="border p-4 my-2 rounded">
               <p>Όνομα: {student.name} | ΑΜ: {student.student_number}</p>
               <div className="mt-2 space-y-2">
-                {availableTopics.map(topic => (
-                  <div key={topic.id} className="border p-2">
-                    <p><strong>{topic.title}</strong></p>
-                    <p className="text-sm text-gray-600">{topic.summary}</p>
-                    <button className="bg-green-500 text-white px-3 py-1 mt-2" onClick={() => assignTopic(topic.id, student)}>Ανάθεση Θέματος</button>
+                {availableTopics.length > 0 ? (
+                  availableTopics.map(topic => (
+                    <div key={topic.id} className="border p-2">
+                      <p><strong>{topic.title}</strong></p>
+                      <p className="text-sm text-gray-600">{topic.summary}</p>
+                      <button className="bg-green-500 text-white px-3 py-1 mt-2" onClick={() => assignTopic(topic.id, student)}>Ανάθεση Θέματος</button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-gray-500 p-2">
+                    Δεν υπάρχουν διαθέσιμα θέματα για ανάθεση.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
+      {/* Show message when search returns no results */}
+      {searchTerm && filteredStudents.length === 0 && (
+        <div className="text-gray-500 p-4 text-center">
+          Δεν βρέθηκαν φοιτητές με αυτόν τον ΑΜ.
+        </div>
+      )}
+      {/* Show message when students found but no topics available */}
+      {filteredStudents.length > 0 && availableTopics.length === 0 && (
+        <div className="text-gray-500 p-4 text-center">
+          Βρέθηκαν φοιτητές, αλλά δεν υπάρχουν διαθέσιμα θέματα για ανάθεση.
+        </div>
+      )}
       {/* List of assigned topics */}
       <div>
         <h3 className="font-semibold mt-8">Προσωρινές Αναθέσεις</h3>
-        {topics.filter(t => t.professor === user.name && t.assignedTo).map(t => (
-          <div key={t.id} className="border p-3 my-2">
-            <p><strong>{t.title}</strong> - Ανατέθηκε στον {t.assignedStudentName} ({t.assignedTo})</p>
-            <button className="bg-red-500 text-white px-3 py-1 mt-2" onClick={() => unassignTopic(t.id)}>Ανάκληση Ανάθεσης</button>
-          </div>
-        ))}
+        {(() => {
+          const assignedTopics = topics.filter(t => t.professor === user.name && t.assignedTo);
+          return assignedTopics.length > 0 ? (
+            assignedTopics.map(t => (
+              <div key={t.id} className="border p-3 my-2">
+                <p><strong>{t.title}</strong> - Ανατέθηκε στον {t.assignedStudentName} ({t.assignedTo})</p>
+                <button className="bg-red-500 text-white px-3 py-1 mt-2" onClick={() => unassignTopic(t.id)}>Ανάκληση Ανάθεσης</button>
+              </div>
+            ))
+          ) : (
+            <div className="text-gray-500 p-2">
+              Δεν υπάρχουν προσωρινές αναθέσεις.
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
