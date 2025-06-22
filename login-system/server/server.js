@@ -295,7 +295,7 @@ app.get("/api/topics", authenticate, apiCacheMiddleware, async (req, res) => {
       `, [req.user.id]);
       console.log(`[DEBUG] creatorTopics for user ${req.user.id}:`, creatorTopics.length);
       
-      // Get topics where professor is the supervisor
+      // Get topics where professor is the supervisor (but not the creator)
       const [supervisorTopics] = await conn.execute(`
         SELECT 
           tt.id, 
@@ -315,7 +315,7 @@ app.get("/api/topics", authenticate, apiCacheMiddleware, async (req, res) => {
       `, [req.user.id, req.user.id]);
       console.log(`[DEBUG] supervisorTopics for user ${req.user.id}:`, supervisorTopics.length);
       
-      // Get topics where professor is a committee member
+      // Get topics where professor is a committee member (but not creator or supervisor)
       const [committeeTopics] = await conn.execute(`
         SELECT 
           tt.id, 
@@ -386,6 +386,7 @@ app.get("/api/topics", authenticate, apiCacheMiddleware, async (req, res) => {
             committee: allMembers
           };
         } else {
+          // For topics without thesis (not assigned yet), only show the creator
           return {
             ...topic,
             committee: []

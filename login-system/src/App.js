@@ -1144,13 +1144,30 @@ function Teacher({ user, topics, setTopics, setUser }) {
                                 headers: { Authorization: `Bearer ${user.token}` }
                               });
                               if (res.ok) {
+                                // Ενημέρωσε το local state
                                 setActiveManageTheses(theses =>
                                   theses.map(t => t.id === thesis.id ? { ...t, status: "υπό εξέταση" } : t)
                                 );
+                                
+                                // Ενημέρωσε τα topics για να εμφανιστεί η αλλαγή
+                                const updatedTopics = topics.map(topic => {
+                                  if (topic.thesis_id === thesis.id) {
+                                    return { ...topic, status: "υπό εξέταση" };
+                                  }
+                                  return topic;
+                                });
+                                setTopics(updatedTopics);
+                                
+                                // Ενημέρωσε τη λίστα διπλωματικών υπό εξέταση
+                                setUnderExaminationTheses(prev => [...prev, { ...thesis, status: "υπό εξέταση" }]);
+                                
+                                alert("Η κατάσταση άλλαξε επιτυχώς σε 'Υπό Εξέταση'");
                               } else {
-                                alert("Αποτυχία αλλαγής κατάστασης.");
+                                const errorData = await res.json().catch(() => ({}));
+                                alert(`Αποτυχία αλλαγής κατάστασης: ${errorData.error || 'Άγνωστο σφάλμα'}`);
                               }
-                            } catch {
+                            } catch (error) {
+                              console.error('Error:', error);
                               alert("Αποτυχία αλλαγής κατάστασης.");
                             }
                           }}
@@ -1779,10 +1796,11 @@ function ThesisList({ user, topics = [], setTopics }) {
       title: topic.title,
       professor: topic.professor,
       userName: user.name,
+      userSurname: user.surname,
       committee: topic.committee
     });
     
-    // Check if professor is the supervisor (topic creator)
+    // Check if professor is the topic creator (professor field matches)
     if (topic.professor === user.name) {
       console.log(`[DEBUG] Professor is topic creator for topic ${topic.id}`);
       return "Επιβλέπων";
@@ -1792,35 +1810,19 @@ function ThesisList({ user, topics = [], setTopics }) {
     if (topic.committee && Array.isArray(topic.committee)) {
       console.log(`[DEBUG] Checking committee for topic ${topic.id}:`, topic.committee);
       
-      // Find all roles for this professor
-      const roles = topic.committee
-        .filter(m => {
-          const memberName = (m.name + " " + m.surname).trim();
-          // More precise comparison to avoid false matches
-          const match = memberName === user.name || 
-                       (user.name + " " + user.surname).trim() === memberName ||
-                       memberName === user.name + " " + user.surname;
-          console.log(`[DEBUG] Comparing member "${memberName}" with user "${user.name} ${user.surname}": ${match}`);
-          return match;
-        })
-        .map(m => m.role);
-      
-      console.log(`[DEBUG] getUserRole for topic ${topic.id}:`, { 
-        topicProfessor: topic.professor, 
-        userName: user.name, 
-        committee: topic.committee,
-        roles: roles 
+      // Find professor in committee by comparing both name and surname
+      const committeeMember = topic.committee.find(m => {
+        const memberFullName = `${m.name} ${m.surname}`.trim();
+        const userFullName = `${user.name} ${user.surname}`.trim();
+        
+        console.log(`[DEBUG] Comparing: "${memberFullName}" with "${userFullName}"`);
+        
+        return memberFullName === userFullName;
       });
       
-      if (roles.length > 0) {
-        // If professor has multiple roles, prioritize supervisor role
-        if (roles.includes("Επιβλέπων")) {
-          console.log(`[DEBUG] Returning Επιβλέπων role for topic ${topic.id}`);
-          return "Επιβλέπων";
-        }
-        // For committee members, return "Μέλος" role
-        console.log(`[DEBUG] Returning Μέλος role for topic ${topic.id}`);
-        return "Μέλος";
+      if (committeeMember) {
+        console.log(`[DEBUG] Found professor in committee for topic ${topic.id} with role:`, committeeMember.role);
+        return committeeMember.role; // Return the actual role from database
       }
     } else {
       console.log(`[DEBUG] No committee or committee is not array for topic ${topic.id}:`, topic.committee);
@@ -1836,7 +1838,6 @@ function ThesisList({ user, topics = [], setTopics }) {
     console.log(`[DEBUG] Filtering topic ${t.id}:`, { title: t.title, userRole });
     return userRole !== null; // Only show theses where professor has a role
   });
-
   console.log("[DEBUG] professorTheses after filtering:", professorTheses.length);
 
   // Then apply status and role filters
@@ -1931,7 +1932,6 @@ function ThesisList({ user, topics = [], setTopics }) {
     </div>
   );
 }
-
 // Topic management for professors
 function TopicManagement({ user, topics = [], setTopics }) {
   const [title, setTitle] = useState(""); // New topic title
@@ -4135,4 +4135,6 @@ function Admin({ user, setUser }) {
 }
 
 export default App;
+
+
 
