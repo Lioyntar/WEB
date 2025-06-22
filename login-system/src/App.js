@@ -350,6 +350,11 @@ function Teacher({ user, topics, setTopics }) {
   const [loadingInvitations, setLoadingInvitations] = useState(false);
   const [inviteError, setInviteError] = useState("");
 
+  // Logout handler
+  const handleLogout = () => {
+    navigate("/logout");
+  };
+
   // Load invitations
   const handleShowInvitations = async () => {
     setShowInvitations(true);
@@ -889,9 +894,14 @@ function Teacher({ user, topics, setTopics }) {
       {/* List of theses */}
       <ThesisList user={user} topics={topics} setTopics={setTopics} />
       
-      <button className="bg-indigo-600 text-white px-4 py-2 rounded w-full" onClick={handleShowStatisticsModal}>
-        Προβολή Στατιστικών
-      </button>
+      <div className="flex space-x-4">
+        <button className="bg-indigo-600 text-white px-4 py-2 rounded flex-1" onClick={handleShowStatisticsModal}>
+          Προβολή Στατιστικών
+        </button>
+        <button className="bg-red-600 text-white px-4 py-2 rounded" onClick={handleLogout}>
+          Αποσύνδεση
+        </button>
+      </div>
       {/* Modal for invitations */}
       {showInvitations && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -2165,6 +2175,13 @@ function timeSince(dateString) {
 
 // Student dashboard
 function Student({ user, topics = [] }) {
+  const navigate = useNavigate();
+
+  // Logout handler
+  const handleLogout = () => {
+    navigate("/logout");
+  };
+
   // Show only topics assigned to this student
   const assignedTopics = (topics || []).filter(
     t => t.assignedTo === user.student_number
@@ -2751,12 +2768,20 @@ function Student({ user, topics = [] }) {
         </div>
       )}
       {/* Κουμπί επεξεργασίας προφίλ */}
-      <button
-        className="bg-[#0ef] text-white px-3 py-1 mb-4"
-        onClick={handleShowProfile}
-      >
-        Επεξεργασία Προφίλ
-      </button>
+      <div className="flex space-x-4 mb-4">
+        <button
+          className="bg-[#0ef] text-white px-3 py-1"
+          onClick={handleShowProfile}
+        >
+          Επεξεργασία Προφίλ
+        </button>
+        <button
+          className="bg-red-600 text-white px-3 py-1"
+          onClick={handleLogout}
+        >
+          Αποσύνδεση
+        </button>
+      </div>
       {/* Κουμπιά διαχείρισης διπλωματικής */}
       {assignedTopic && (
         <>
@@ -3318,6 +3343,13 @@ function Student({ user, topics = [] }) {
 
 // Admin/secretary dashboard
 function Admin({ user }) {
+  const navigate = useNavigate();
+
+  // Logout handler
+  const handleLogout = () => {
+    navigate("/logout");
+  };
+
   const [theses, setTheses] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -3670,7 +3702,15 @@ function Admin({ user }) {
 
   return (
     <div className="p-4 space-y-4" id="main-content">
-      <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-bold" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
+        <button
+          className="bg-red-600 text-white px-4 py-2 rounded"
+          onClick={handleLogout}
+        >
+          Αποσύνδεση
+        </button>
+      </div>
       
       {/* Προβολή Διπλωματικης Εργασιας */}
       <div className="border p-4 rounded bg-[#1f293a]">
