@@ -531,16 +531,17 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
   let committee = [];
   if (thesis && thesis.id) {
     const [committeeRows] = await conn.execute(
-      `SELECT cm.professor_id, cm.response, cm.response_date, p.name, p.surname,
-        CASE
-          WHEN cm.professor_id = ? THEN 'Επιβλέπων'
-          ELSE 'Μέλος'
-        END as role
-       FROM committee_members cm
-       JOIN professors p ON cm.professor_id = p.id
-       WHERE cm.thesis_id = ?`,
-      [thesis.supervisor_id, thesis.id]
-    );
+  `SELECT cm.professor_id, cm.response, cm.response_date, p.name, p.surname,
+    CASE
+      WHEN cm.professor_id = ? THEN 'Επιβλέπων'
+      ELSE 'Μέλος'
+    END as role
+   FROM committee_members cm
+   JOIN professors p ON cm.professor_id = p.id
+   WHERE cm.thesis_id = ? AND cm.response = 'Αποδεκτή'`,
+  [thesis.supervisor_id, thesis.id]
+);
+
     committee = committeeRows.map(r => ({
       professor_id: r.professor_id,
       name: r.name,
