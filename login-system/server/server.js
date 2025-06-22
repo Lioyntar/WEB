@@ -2019,6 +2019,15 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
     const supervisor = committee.find(c => c.role === 'Επιβλέπων') || { name: thesis.supervisor_name, surname: thesis.supervisor_surname };
     const presentationDate = new Date(thesis.presentation_date);
     
+    // Define fullCommittee for use in the HTML template
+    const supervisorId = thesis.supervisor_id;
+    const fullCommittee = committee.map(m => ({
+      name: m.name,
+      surname: m.surname,
+      role: m.professor_id === supervisorId ? 'Επιβλέπων' : 'Μέλος',
+      grade: m.grade
+    }));
+
     const html = `
 <!DOCTYPE html>
 <html lang="el">
@@ -2058,7 +2067,7 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
         
         <p>Στην συνεδρίαση είναι παρόντα τα μέλη της Τριμελούς Επιτροπής, κ.κ.:</p>
         <ol class="signature-list">
-            ${committee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
+            ${fullCommittee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
         </ol>
         
         <p>οι οποίοι ορίσθηκαν από την Συνέλευση του ΤΜΗΥΠ, στην συνεδρίαση της με αριθμό <span class="dotted">${thesis.gs_number || '................'}</span>.</p>
@@ -2073,7 +2082,7 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
         
         <p>Τα μέλη της Τριμελούς Επιτροπής, ψηφίζουν κατ' αλφαβητική σειρά:</p>
         <ol class="signature-list">
-           ${committee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
+           ${fullCommittee.map(m => `<li>${m.name} ${m.surname}</li>`).join('')}
         </ol>
         
         <p>υπέρ της εγκρίσεως της Διπλωματικής Εργασίας του φοιτητή <span class="dotted">${thesis.student_name} ${thesis.student_surname}</span>, επειδή θεωρούν επιστημονικά επαρκή και το περιεχόμενό της ανταποκρίνεται στο θέμα που του δόθηκε.</p>
