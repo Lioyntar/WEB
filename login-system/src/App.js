@@ -897,17 +897,6 @@ function Teacher({ user, topics, setTopics, setUser }) {
 
   return (
     <div className="p-4 space-y-4" id="main-content">
-      {/* Logout button - top left */}
-      <button 
-        className="logout-button"
-        onClick={() => {
-          setUser(null);
-          navigate("/login");
-        }}
-      >
-        Αποσύνδεση
-      </button>
-      
       <h2 className="text-xl font-bold mb-4">Καλωσορίσατε Διδάσκων: {user.name}</h2>
       {/* Navigation buttons */}
       <button className="bg-blue-500 text-white px-4 py-2 rounded w-full" onClick={() => navigate("/teacher/topics")}>Προβολή και Δημιουργία θεμάτων προς ανάθεση</button>
@@ -923,6 +912,14 @@ function Teacher({ user, topics, setTopics, setUser }) {
       <button className="bg-indigo-600 text-white px-4 py-2 rounded w-full" onClick={handleShowStatisticsModal}>
         Προβολή Στατιστικών
       </button>
+      
+      <button className="bg-red-600 text-white px-4 py-2 rounded w-full" onClick={() => {
+        setUser(null);
+        navigate("/login");
+      }}>
+        Αποσύνδεση
+      </button>
+      
       {/* Modal for invitations */}
       {showInvitations && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -2798,17 +2795,6 @@ function Student({ user, topics = [], setUser }) {
 
   return (
     <div className="p-4 max-w-2xl mx-auto space-y-4" id="main-content">
-      {/* Logout button - top left */}
-      <button 
-        className="logout-button"
-        onClick={() => {
-          setUser(null);
-          navigate("/login");
-        }}
-      >
-        Αποσύνδεση
-      </button>
-      
       <h2 className="text-xl font-bold">Η Διπλωματική μου</h2>
       {/* Ειδοποίηση για περατωμένες διπλωματικές */}
       {assignedTopic && (assignedTopic.status && assignedTopic.status.trim().toLowerCase() === "περατωμένη") && (
@@ -3378,6 +3364,12 @@ function Student({ user, topics = [], setUser }) {
           </div>
         </div>
       )}
+      <button className="bg-red-600 text-white px-4 py-2 rounded w-full" onClick={() => {
+        setUser(null);
+        navigate("/login");
+      }}>
+        Αποσύνδεση
+      </button>
     </div>
   );
 }
@@ -3738,17 +3730,6 @@ function Admin({ user, setUser }) {
 
   return (
     <div className="p-4 space-y-4" id="main-content">
-      {/* Logout button - top left */}
-      <button 
-        className="logout-button"
-        onClick={() => {
-          setUser(null);
-          navigate("/login");
-        }}
-      >
-        Αποσύνδεση
-      </button>
-      
       <h2 className="text-xl font-bold mb-4" style={{ color: "#0ef" }}>Καλωσορίσατε Γραμματεία</h2>
       
       {/* Προβολή Διπλωματικης Εργασιας */}
@@ -4142,6 +4123,13 @@ function Admin({ user, setUser }) {
           </div>
         </div>
       )}
+
+      <button className="bg-red-600 text-white px-4 py-2 rounded w-full" onClick={() => {
+        setUser(null);
+        navigate("/login");
+      }}>
+        Αποσύνδεση
+      </button>
     </div>
   );
 }
