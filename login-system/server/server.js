@@ -10,11 +10,47 @@ const path = require("path"); // For handling file paths
 // Create an Express application
 const app = express();
 
+// Caching middleware for different resource types
+const cacheMiddleware = (req, res, next) => {
+  const filePath = req.path;
+  const fileExtension = path.extname(filePath).toLowerCase();
+  
+  // Cache control based on file type
+  if (fileExtension === '.pdf') {
+    // PDF files: cache for 1 hour (3600 seconds)
+    // PDFs are typically thesis documents that don't change frequently
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+    res.setHeader('ETag', `"pdf-${Date.now()}"`);
+  } else if (['.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico'].includes(fileExtension)) {
+    // Images: cache for 1 week (604800 seconds)
+    // Images rarely change and benefit from long-term caching
+    res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=604800, immutable');
+    res.setHeader('ETag', `"img-${Date.now()}"`);
+  } else if (['.css', '.js'].includes(fileExtension)) {
+    // CSS/JS files: cache for 1 day (86400 seconds)
+    // Static assets with versioning can be cached longer
+    res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
+    res.setHeader('ETag', `"asset-${Date.now()}"`);
+  } else if (fileExtension === '.html') {
+    // HTML files: cache for 5 minutes (300 seconds)
+    // HTML content may change more frequently
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
+    res.setHeader('ETag', `"html-${Date.now()}"`);
+  } else {
+    // Default: no cache for unknown file types
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  
+  next();
+};
+
 // Configure multer for file uploads, files will be stored in 'uploads/' directory
 const upload = multer({ dest: "uploads/" });
 
-// Serve uploaded files as static with correct Content-Type for PDF
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+// Serve uploaded files as static with caching and correct Content-Type for PDF
+app.use('/uploads', cacheMiddleware, express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.pdf')) {
       res.setHeader('Content-Type', 'application/pdf');
@@ -22,14 +58,23 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   }
 }));
 
-// Serve draft uploads as static (for draft_submissions)
-app.use('/draft_uploads', express.static(path.join(__dirname, 'draft_uploads'), {
+// Serve draft uploads as static with caching (for draft_submissions)
+app.use('/draft_uploads', cacheMiddleware, express.static(path.join(__dirname, 'draft_uploads'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.pdf')) {
       res.setHeader('Content-Type', 'application/pdf');
     }
   }
 }));
+
+// API response caching middleware
+const apiCacheMiddleware = (req, res, next) => {
+  // Cache API responses for 5 minutes (300 seconds)
+  // This reduces database load for frequently accessed data
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.setHeader('ETag', `"api-${Date.now()}"`);
+  next();
+};
 
 // Enable CORS for all routes (allows frontend to call backend)
 app.use(cors());
@@ -153,7 +198,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // Get all thesis topics (professor view) or student's assigned theses (student view)
-app.get("/api/topics", authenticate, async (req, res) => {
+app.get("/api/topics", authenticate, apiCacheMiddleware, async (req, res) => {
   try {
     console.log("[DEBUG] /api/topics called by user:", req.user);
     const conn = await mysql.createConnection(dbConfig);
