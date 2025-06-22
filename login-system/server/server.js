@@ -2089,7 +2089,7 @@ app.get('/api/examination-minutes/:thesisId', authenticate, async (req, res) => 
                 </tr>
             </thead>
             <tbody>
-                ${committee.map(m => `
+                ${fullCommittee.map(m => `
                 <tr>
                     <td>${m.name} ${m.surname}</td>
                     <td>${m.role}</td>
@@ -3005,20 +3005,7 @@ ${committeeListText || '1................\n2................\n3................'
 
 Ο/Η φοιτητής/φοιτήτρια κ. ${thesis.student_name || '................'} ${thesis.student_surname || ''} ανέπτυξε το θέμα της Διπλωματικής του/της Εργασίας, με τίτλο «${thesis.thesis_title || '................'}».
 
-Στην συνέχεια υποβλήθηκαν ερωτήσεις στον υποψήφιο από τα μέλη της Τριμελούς Επιτροπής και τους άλλους παρευρισκόμενους, προκειμένου να διαμορφώσουν σαφή άποψη για το περιεχόμενο της εργασίας, για την επιστημονική συγκρότηση του μεταπτυχιακού φοιτητή.
-        
-Μετά το τέλος της ανάπτυξης της εργασίας του και των ερωτήσεων, ο υποψήφιος αποχωρεί.
-        
-Ο Επιβλέπων καθηγητής κ. ${thesis.supervisor_name || ''} ${thesis.supervisor_surname || ''}, προτείνει στα μέλη της Τριμελούς Επιτροπής, να ψηφίσουν για το αν εγκρίνεται η διπλωματική εργασία του ${thesis.student_name} ${thesis.student_surname}.
-        
-Τα μέλη της Τριμελούς Επιτροπής, ψηφίζουν κατ' αλφαβητική σειρά:
-${committeeListText}
-        
-υπέρ της εγκρίσεως της Διπλωματικής Εργασίας του φοιτητή ${thesis.student_name} ${thesis.student_surname}, επειδή θεωρούν επιστημονικά επαρκή και το περιεχόμενό της ανταποκρίνεται στο θέμα που του δόθηκε.
-        
-Μετά της έγκριση, ο εισηγητής κ. ${thesis.supervisor_name || ''} ${thesis.supervisor_surname || ''}, προτείνει στα μέλη της Τριμελούς Επιτροπής, να απονεμηθεί στο/στη φοιτητή/τρια κ. ${thesis.student_name} ${thesis.student_surname} ο βαθμός ${thesis.final_grade}.
-
-Τα μέλη της Τριμελούς Επιτροπής, απονέμουν την παρακάτω βαθμολογία:</p>
+Στην συνέχεια υποβλήθηκαν ερωτήσεις στον υποψήφιο από τα μέλη της Τριμελούς Επιτροπής και τους άλλους παρευρισκόμενους, προκειμένου να διαμορφώσουν σαφή άποψη για το περιεχόμενο της εργασίας, για την επιστημονική συγκρότηση του μεταπτυχιακού φοιτητή.</p>
         <table>
             <thead>
                 <tr>
@@ -3028,7 +3015,7 @@ ${committeeListText}
                 </tr>
             </thead>
             <tbody>
-                ${committee.map(m => `
+                ${fullCommittee.map(m => `
                 <tr>
                     <td>${m.name} ${m.surname}</td>
                     <td>${m.role}</td>
@@ -3083,29 +3070,3 @@ ${committeeListText}
     res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση ανακοινώσεων.', details: err.message });
   }
 });
-
-// THIS ENDPOINT IS NO LONGER NEEDED AND WILL BE REMOVED.
-/*
-app.get('/api/public/topics', async (req, res) => {
-  const conn = await mysql.createConnection(dbConfig);
-  try {
-    const [rows] = await conn.execute(`
-      SELECT 
-        tt.id as topic_id,
-        tt.title,
-        tt.summary,
-        tt.created_at,
-        p.name as professor_name,
-        p.surname as professor_surname
-      FROM thesis_topics tt
-      JOIN professors p ON tt.professor_id = p.id
-      ORDER BY tt.created_at DESC
-    `);
-    res.json({ total: rows.length, topics: rows });
-    await conn.end();
-  } catch (err) {
-    await conn.end();
-    res.status(500).json({ error: 'Σφάλμα διακομιστή κατά την ανάκτηση θεμάτων.' });
-  }
-});
-*/
