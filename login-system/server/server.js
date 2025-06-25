@@ -538,7 +538,7 @@ app.get("/api/thesis-details/:topicId", authenticate, async (req, res) => {
         END as role
        FROM committee_members cm
        JOIN professors p ON cm.professor_id = p.id
-       WHERE cm.thesis_id = ?`,
+       WHERE cm.thesis_id = ? AND cm.response = 'Αποδεκτή'`,
       [thesis.supervisor_id, thesis.id]
     );
     committee = committeeRows.map(r => ({
